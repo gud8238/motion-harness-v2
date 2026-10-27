@@ -288,3 +288,116 @@ test('channels stay continuous across interrupting actions', () => {
     }
   }
 });
+
+// ── 파츠 시트 (Task 10) ──
+import fs from 'node:fs';
+const R = JSON.parse(fs.readFileSync('test/fixtures/rig/parts.json', 'utf8'));
+const PD = MH.rig.normalize(R);
+const lay = (A, t, o = OFF, rig = R) => MH.rig.layout(rig, MH.rig.pose(PD, A, t, o));
+const byName = L => Object.fromEntries(L.map(q => [q.name, q]));
+test('layout hides open eyes during blink', () => {
+  const L = MH.rig.layout(R, MH.rig.pose(R, [[1, 'blink']], 1.06, { life: false }));
+  assert.equal(L.find(p => p.name === R.eyesClosed).visible, true);
+  assert.equal(L.find(p => p.name === 'eyes_open').visible, false);
+  const open = byName(lay([], 0.5));
+  assert.equal(open.eyes_open.visible, true); assert.equal(open.eyes_closed.visible, false);
+});
+test('child part follows parent transform', () => {
+  const L = byName(lay([[0, 'nod', { amt: 20, dur: 1 }], [0, 'walk', { to: [100, 0], steps: 2, dur: 1 }]], 0.5));
+  const A = byName(MH.rig.layout(R, { ...MH.rig.pose(PD, [], 0, OFF), x: 50, y: 20, rot: 10, sx: 1, sy: 1, limbs: [0, 0] }));
+  assert.ok(A.body.transform.startsWith('translate(50 20) rotate(10)'));
+  assert.ok(A.limb0.transform.startsWith(A.body.transform), A.limb0.transform);
+  assert.ok(A.limb0.transform.length > A.body.transform.length);
+  assert.ok(L.limb0.transform.startsWith(L.body.transform));
+  assert.equal(A.body.transform, 'translate(50 20) rotate(10) translate(-200 -160)');
+  assert.equal(A.limb0.transform, `${A.body.transform} translate(10 180) translate(-30 -10)`);   // 부모 pivot(200,160) + at(-190,20), 자기 pivot 만큼 되돌림
+});
+test('layout is z-ascending, pure, and hides non-chosen face parts', () => {
+  const L = lay([], 0.5);
+  assert.ok(L.every((q, i) => i === 0 || L[i - 1].z <= q.z));
+  assert.deepEqual(Array.from(L.map(q => q.name)), ['limb0', 'limb1', 'body', 'eyes_open', 'eyes_closed', 'mouth_smile', 'mouth_open']);
+  assert.equal(JSON.stringify(lay([], 0.5)), JSON.stringify(L));
+  const q = byName(lay([[0, 'face', 'happy']], 1));   // happy = 감은 눈 + 열린 입
+  assert.equal(q.eyes_closed.visible, true); assert.equal(q.eyes_open.visible, false);
+  assert.equal(q.mouth_open.visible, true); assert.equal(q.mouth_smile.visible, false);
+  assert.ok(q.body.visible && q.limb0.visible);
+});
+test('talk swaps in talkMouth while the mouth is open, not when idle', () => {
+  const A = [[0, 'talk', { dur: 1 }]], seen = new Set();
+  for (let i = 0; i < 60; i++) { const b = byName(lay(A, i / 60)); seen.add(b.mouth_open.visible + '/' + b.mouth_smile.visible); }
+  assert.ok(seen.has('true/false') && seen.has('false/true'));
+  const after = byName(lay(A, 2)); assert.equal(after.mouth_open.visible, false); assert.equal(after.mouth_smile.visible, true);
+  const noTalk = { ...R, talkMouth: undefined }, p = MH.rig.pose(PD, A, 0.08, OFF);
+  assert.equal(byName(MH.rig.layout(noTalk, p)).mouth_open.visible, false);
+});
+test('unknown face falls back to idle; look offsets only face parts', () => {
+  const lonely = { ...R, faces: { idle: R.faces.idle } };
+  const f = byName(MH.rig.layout(lonely, MH.rig.pose(PD, [[0, 'face', 'star']], 0.5, OFF)));
+  assert.equal(f.mouth_smile.visible, true);
+  const p0 = byName(lay([], 2)), p1 = byName(lay([[0, 'look', { x: 1, y: -1 }]], 2));
+  assert.ok(p0.eyes_open.transform.endsWith('translate(200 120) translate(-80 -30)'), p0.eyes_open.transform);
+  assert.ok(p1.eyes_open.transform.endsWith('translate(206 114) translate(-80 -30)'), p1.eyes_open.transform);   // lookPx 6 × (1, −1)
+  assert.equal(p1.body.transform, p0.body.transform); assert.equal(p1.limb0.transform, p0.limb0.transform);
+});
+test('limbs swing from pose.limbs; sweat part follows pose.sweat', () => {
+  const W = [[0, 'walk', { to: [300, 0], steps: 2, dur: 1 }]];
+  const mid = byName(lay(W, 0.25)), end = byName(lay(W, 5));
+  assert.notEqual(mid.limb0.transform, end.limb0.transform);
+  const rotOf = q => q.m[q.m.length - 2][2];
+  assert.ok(Math.abs(rotOf(mid.limb0)) > 1 && rotOf(mid.limb1) === -rotOf(mid.limb0));   // 팔 둘은 반대로 흔들린다
+  const rig = { ...R, parts: [...R.parts, { name: 'sweat', src: 'sweat.png', size: [20, 30], pivot: [10, 15], parent: 'body', at: [150, -120], z: 30 }], faces: { ...R.faces, sweat: { eyes: 'eyes_open', mouth: 'mouth_smile' } } };
+  const s0 = byName(MH.rig.layout(rig, MH.rig.pose(PD, [], 0, OFF))), s1 = byName(MH.rig.layout(rig, MH.rig.pose(PD, [[0, 'face', 'sweat']], 1, OFF)));
+  assert.equal(s0.sweat.visible, false); assert.equal(s1.sweat.visible, true); assert.equal(s1.sweat.opacity, 1);
+  const custom = byName(MH.rig.layout({ ...R, limbs: ['limb1', 'limb0'] }, { ...MH.rig.pose(PD, [], 0, OFF), limbs: [30, 0] }));
+  assert.match(custom.limb1.transform, /rotate\(30\)/); assert.doesNotMatch(custom.limb0.transform, /rotate\(30\)/);
+});
+test('parts rig: body size comes from the root part, bad rigs are rejected in Korean', () => {
+  assert.deepEqual(Array.from(PD.body && [PD.body.w, PD.body.h]), [400, 320]);
+  assert.throws(() => MH.rig.normalize({ kind: 'parts', parts: [{ name: 'a', src: 'a.png', parent: null }] }), /size/);
+  assert.throws(() => MH.rig.normalize({ kind: 'parts', size: [1, 1], parts: [{ name: 'a', src: 'a.png', parent: 'b' }] }), /루트/);
+  assert.throws(() => MH.rig.normalize({ kind: 'parts', size: [1, 1], parts: [{ name: 'a', src: 'a', parent: null }, { name: 'b', src: 'b', parent: 'c' }] }), /parent/);
+  assert.throws(() => MH.rig.normalize({ kind: 'parts', size: [1, 1], parts: [{ name: 'a', src: 'a', parent: null }, { name: 'b', src: 'b', parent: 'c' }, { name: 'c', src: 'c', parent: 'b' }] }), /순환/);
+  assert.throws(() => MH.rig.layout(D, MH.rig.pose(D, [], 0, OFF)), /parts/);
+});
+test('grow fills portrait screen', () => {
+  const p = MH.rig.pose(PD, [[0, 'grow', { fill: 'screen', dur: 0.8 }]], 2, { life: false, W: 1080, H: 1920 });
+  assert.ok(p.sx * PD.body.h >= Math.hypot(1080, 1920) * 0.99);   // 짧은 변(320) 기준 R9
+  assert.equal(p.x, 540); assert.equal(p.y, 960);
+  const q = byName(MH.rig.layout(R, p));
+  assert.ok(q.body.transform.startsWith(`translate(540 960) scale(${p.sx} ${p.sy})`) || q.body.transform.startsWith('translate(540 960)'));
+});
+test('parts actor: SVG images are created once, canvas draws with drawImage, loads register buildReady', async () => {
+  const loaded = [];
+  class Image { set src(v) { this._s = v; loaded.push(v); this.naturalWidth = 50; this.naturalHeight = 40; Promise.resolve().then(() => this.onload()); } get src() { return this._s; } }
+  const { log, document, root } = fakeSVG();
+  const RT2 = loadRuntime(RT, { document, Image }), M2 = RT2.MH;
+  const a = M2.rig.actor(root, R, { life: false }).act([[0, 'face', 'happy'], [0.5, 'walk', { to: [100, 0] }]]);
+  assert.deepEqual(Array.from(new Set(loaded)).sort(), Array.from(new Set(R.parts.map(q => q.src))).sort());
+  assert.equal(loaded.length, new Set(R.parts.map(q => q.src)).size);   // src 별 한 번
+  await Promise.all(Object.values(RT2.__hf.buildReady));
+  assert.equal(typeof RT2.__hf.buildReady['rig:assets/actors/hero/body.png'].then, 'function');
+  a.render(0); const created = log.created, g = root.children[0];
+  assert.equal(g.children.length, R.parts.length); assert.ok(g.children.every(c => c.tag === 'image'));
+  assert.deepEqual(Array.from(g.children.map(c => c.attrs['data-part'])), ['limb0', 'limb1', 'body', 'eyes_open', 'eyes_closed', 'mouth_smile', 'mouth_open']);
+  const body = g.children.find(c => c.attrs['data-part'] === 'body'), eo = g.children.find(c => c.attrs['data-part'] === 'eyes_open');
+  assert.equal(body.attrs.href, 'assets/actors/hero/body.png'); assert.equal(body.attrs.width, '400');
+  assert.equal(eo.attrs.display, 'none');
+  const tf0 = body.attrs.transform; a.render(0.7); a.render(1);
+  assert.equal(log.created, created); assert.notEqual(body.attrs.transform, tf0);
+  const sets = log.sets; a.render(1); assert.equal(log.sets, sets);
+  // 캔버스
+  const calls = [];
+  const ctx = { save() {}, restore() {}, translate: (...a) => calls.push(['t', ...a]), rotate() {}, scale() {}, drawImage: (img, ...a) => calls.push(['d', img.src, ...a]) };
+  const c = M2.rig.actor(ctx, R, { life: false });
+  c.render(0);
+  const draws = calls.filter(x => x[0] === 'd');
+  assert.deepEqual(Array.from(draws.map(d => d[1].split('/').pop())), ['arm.png', 'arm.png', 'body.png', 'eyes_open.png', 'mouth_smile.png']);
+  assert.deepEqual(Array.from(draws[2].slice(2)), [0, 0, 400, 320]);
+});
+test('parts image load failure rejects buildReady in Korean', async () => {
+  class Image { set src(v) { Promise.resolve().then(() => this.onerror()); } }
+  const R2 = loadRuntime(RT, { Image, document: fakeSVG().document });
+  R2.MH.rig.actor(fakeSVG().root, R, { life: false });
+  await assert.rejects(R2.__hf.buildReady['rig:assets/actors/hero/body.png'], /불러오지 못했습니다/);
+});
+test('rig2d.md size', () => assert.ok(fs.statSync('harness/modules/rig2d.md').size <= 3072));

@@ -2,6 +2,7 @@
  * 캐릭터 = 디자인(몸통·눈·입·볼·팔다리·땀) + 동작 목록 [t, name, opts][]. 자세 pose(t) 는 장면 로컬 시간 t 의 순수 함수.
  * 좌표: pose.x/y = 몸통 중심(부모 좌표, px), sx/sy/rot(도) 는 몸통 중심 기준. geometry() 는 루트 변환 전의 로컬 좌표(0,0 = 몸통 중심).
  * 렌더: actor(svg 요소 | 캔버스 2D 컨텍스트, design).act([...]).render(t) — 루트 변환 translate(x,y) rotate(rot) scale(sx,sy).
+ * 일러스트 캐릭터: 디자인 대신 파츠 시트 리그 { kind:'parts', … } 를 넘기면 같은 pose 로 파츠 이미지를 움직인다 (아래 '파츠 시트' 구간, layout()).
  * anchor(0 = 월드, 1 = 화면) 는 무대·카메라가 읽는 값이다 (grow 는 x/y 를 화면 좌표의 중앙으로 보낸다). */
 (function () {
 'use strict';
@@ -33,6 +34,7 @@ const warnOnce = (key, msg) => { if (!warned.has(key)) { warned.add(key); consol
 // ───────────── 디자인 ─────────────
 function normalize(d) {
   d = d || {};
+  if (d.kind === 'parts') return normalizeParts(d);
   const pick = k => {
     const v = Object.assign({}, DEF[k], d[k]);
     if (!SHAPES[k].includes(v.shape)) { warnOnce(k + ':' + v.shape, `MH.rig: ${k}.shape '${v.shape}' 는 지원하지 않습니다 (${SHAPES[k].join('|')}) — '${DEF[k].shape}' 로 그립니다.`); v.shape = DEF[k].shape; }
@@ -152,7 +154,7 @@ function pose(design, actions, t, o = {}) {
   return {
     x: ch.x(t), y: ch.y(t), sx: ch.sx(t), sy, rot,
     eyes: { open, lx: ch.lx(t), ly: ch.ly(t), shape: F.eyes },
-    mouth: talking ? { shape: 'open', open: 0.5 - 0.5 * Math.cos(2 * Math.PI * 6 * (t - talk[0])) } : { shape: F.mouth, open: 1 },
+    mouth: talking ? { shape: 'open', open: 0.5 - 0.5 * Math.cos(2 * Math.PI * 6 * (t - talk[0])), talking: true } : { shape: F.mouth, open: 1, talking: false },
     face: face || 'idle',
     limbs: D.limbs.map((_, i) => (i % 2 ? -sw : sw)),
     sweat: F.sweat || 0,
@@ -242,6 +244,75 @@ function geometry(design, p) {
 }
 const partNames = D => [...D.limbs.map((_, i) => 'limb' + i), 'body', ...D.extras.map(e => e.part), ...(D.cheeks ? ['cheekL', 'cheekR'] : []), 'eyeL', 'eyeR', 'mouth', 'sweat'];
 
+// ───────────── 파츠 시트 (kind: 'parts') ─────────────
+// RigJson = { kind:'parts', size:[몸통 w,h], parts:[{ name, src, pivot:[px,py], parent:이름|null, at:[x,y], z, size?:[w,h] }],
+//   faces:{ 표정: { eyes:파츠, mouth:파츠 } }, eyesClosed:파츠, talkMouth?:파츠, limbs?:[파츠…], lookPx?: 6 }
+// 좌표는 모두 이미지(표시 크기) px. pivot = 파츠 이미지 안의 회전 중심, at = 그 중심이 놓일 곳(부모 파츠의 pivot 기준, 루트는 배우 원점 = 몸통 중심 기준).
+// 루트 파츠 size 가 몸통 크기(없으면 rig.size) — grow·hop 이 쓴다. 팔다리 회전은 pose.limbs[i] → 파츠 limb<i> (rig.limbs 가 있으면 그 순서).
+function normalizeParts(d) {
+  const parts = (d.parts || []).map((q, i) => ({ name: q.name, src: q.src, pivot: [q.pivot?.[0] ?? 0, q.pivot?.[1] ?? 0], parent: q.parent ?? null, at: [q.at?.[0] ?? 0, q.at?.[1] ?? 0], z: q.z ?? 0, size: q.size ? [q.size[0], q.size[1]] : null, i }));
+  const byName = new Map(parts.map(q => [q.name, q])), root = parts.find(q => q.parent == null);
+  if (!root) throw new Error("MH.rig: 파츠 리그에 루트 파츠(parent: null)가 없습니다.");
+  for (const q of parts) {
+    if (q.parent != null && !byName.has(q.parent)) throw new Error(`MH.rig: 파츠 '${q.name}' 의 parent '${q.parent}' 가 없습니다.`);
+    let n = 0; for (let c = q; c.parent != null; c = byName.get(c.parent)) if (++n > parts.length) throw new Error(`MH.rig: 파츠 '${q.name}' 의 parent 가 순환합니다.`);
+  }
+  const size = root.size || d.size;
+  if (!size) throw new Error(`MH.rig: 루트 파츠 '${root.name}' 에 size: [w, h] 가 필요합니다.`);
+  const faces = d.faces || {}, ref = new Set([d.eyesClosed, d.talkMouth].filter(Boolean));
+  for (const f of Object.values(faces)) { if (f.eyes) ref.add(f.eyes); if (f.mouth) ref.add(f.mouth); }
+  for (const n of ref) if (!byName.has(n)) warnOnce('part:' + n, `MH.rig: 표정·눈감음·말하는 입이 가리키는 파츠 '${n}' 가 parts 에 없습니다.`);
+  const limbs = Array.isArray(d.limbs) ? d.limbs : parts.filter(q => /^limb\d+$/.test(q.name)).sort((a, b) => a.name.slice(4) - b.name.slice(4)).map(q => q.name);
+  const out = Object.assign({}, d, {
+    kind: 'parts', size: [size[0], size[1]], body: { shape: 'roundRect', w: size[0], h: size[1] }, eyes: { shape: 'oval' }, mouth: { shape: 'none' }, cheeks: null, extras: [],
+    limbs, parts, byName, faces, faceParts: ref, lookPx: d.lookPx ?? 6,
+    order: parts.slice().sort((a, b) => a.z - b.z || a.i - b.i).map(q => q.name),
+  });
+  Object.defineProperty(out, '_rig', { value: true });
+  return out;
+}
+// 순수. 파츠별 { name, src, transform, z, visible, opacity, m } 를 z 오름차순으로 돌려준다.
+//   transform = 부모 파츠의 전체 변환 + translate(부모 pivot + at) rotate(회전) translate(−pivot) → 자식 문자열은 부모 문자열로 시작한다. 루트는 pose 루트 변환으로 시작.
+//   m = 같은 변환의 단계 목록 [[tx, ty, rot, sx, sy], …] (캔버스용).
+function layout(rig, p) {
+  const D = norm(rig);
+  if (D.kind !== 'parts') throw new Error("MH.rig.layout: kind: 'parts' 리그가 필요합니다.");
+  const pe = p.eyes || {}, pm = p.mouth || {}, faceName = D.faces[p.face] ? p.face : 'idle';
+  if (faceName !== p.face && p.face && p.face !== 'idle') warnOnce('face:' + p.face, `MH.rig: 파츠 리그에 표정 '${p.face}' 가 없습니다 — idle 로 대신합니다.`);
+  const F = D.faces[faceName] || {};
+  const eyes = D.eyesClosed && (pe.open ?? 1) < 0.5 ? D.eyesClosed : F.eyes;
+  const mouth = D.talkMouth && pm.talking && (pm.open ?? 0) > 0.5 ? D.talkMouth : F.mouth;
+  const lx = (pe.lx || 0) * D.lookPx, ly = (pe.ly || 0) * D.lookPx, limb = (p.limbs || []);
+  const memo = new Map(), sw = clamp(p.sweat || 0);
+  const chain = q => {
+    let m = memo.get(q.name); if (m) return m;
+    const par = q.parent == null ? null : D.byName.get(q.parent), look = D.faceParts.has(q.name);
+    const li = D.limbs.indexOf(q.name), rot = li >= 0 ? limb[li] || 0 : 0;
+    const base = par ? chain(par).concat([[par.pivot[0] + q.at[0] + (look ? lx : 0), par.pivot[1] + q.at[1] + (look ? ly : 0), rot, 1, 1]]) : [[p.x, p.y, p.rot, p.sx, p.sy], [q.at[0] + (look ? lx : 0), q.at[1] + (look ? ly : 0), rot, 1, 1]];
+    memo.set(q.name, m = base.concat([[-q.pivot[0], -q.pivot[1], 0, 1, 1]]));
+    return m;
+  };
+  return D.order.map(n => {
+    const q = D.byName.get(n), m = chain(q);
+    const visible = q.name === 'sweat' ? sw > 0 : D.faceParts.has(q.name) ? q.name === eyes || q.name === mouth : true;
+    return { name: q.name, src: q.src, transform: m.map(tf).filter(Boolean).join(' '), z: q.z, visible, opacity: q.name === 'sweat' ? sw : 1, m };
+  });
+}
+// 이미지 불러오기 — src 별 한 번. 약속은 window.__hf.buildReady['rig:' + src] 에 등록한다 (브라우저가 아니면 건너뜀).
+const imgCache = new Map();
+function loadImage(src) {
+  let e = imgCache.get(src);
+  if (!e) {
+    const img = typeof Image === 'function' ? new Image() : null;
+    e = { img, ready: img ? new Promise((res, rej) => { img.onload = () => res(img); img.onerror = () => rej(new Error(`파츠 이미지를 불러오지 못했습니다: ${src}`)); img.src = src; }) : Promise.resolve(null) };
+    e.ready.catch(() => {});
+    imgCache.set(src, e);
+  }
+  const hf = (window.__hf = window.__hf || {}); (hf.buildReady = hf.buildReady || {})['rig:' + src] = e.ready;
+  return e;
+}
+const partSize = (q, img) => q.size || (img && img.naturalWidth ? [img.naturalWidth, img.naturalHeight] : null);
+
 // ───────────── 배우 (렌더러) ─────────────
 function actor(target, design, o = {}) {
   const D = normalize(design), opt = Object.assign({ seed: 1, life: true }, o);
@@ -249,6 +320,7 @@ function actor(target, design, o = {}) {
   const ctx = !target || isSVG ? null : typeof target.drawImage === 'function' ? target : typeof target.getContext === 'function' ? target.getContext('2d') : null;
   if (!isSVG && !ctx) throw new Error('MH.rig.actor: SVG 요소나 캔버스 2D 컨텍스트를 넘겨 주세요.');
   let actions = [], svg = null;
+  const imgs = D.kind === 'parts' ? new Map(D.parts.map(q => [q.name, loadImage(q.src)])) : null;   // 파츠 이미지 (이름 → { img, ready })
   const cache = new Map();   // 캔버스 Path2D (d 문자열 → Path2D)
   const set = (el, k, v) => { const c = el.__mh || (el.__mh = {}); if (c[k] !== v) { c[k] = v; el.setAttribute(k, v); } };
   const root = p => P`translate(${p.x} ${p.y}) rotate(${p.rot}) scale(${p.sx} ${p.sy})`;
@@ -281,11 +353,40 @@ function actor(target, design, o = {}) {
     }
     ctx.restore();
   }
+  function drawPartsSVG(p) {
+    const L = layout(D, p);
+    if (!svg) {   // 처음 한 번만 <g> 와 파츠별 <image> 를 z 순서로 만든다
+      const doc = target.ownerDocument || document, g = doc.createElementNS(SVGNS, 'g'), els = new Map();
+      g.setAttribute('data-rig', 'parts');
+      for (const q of L) { const el = doc.createElementNS(SVGNS, 'image'); el.setAttribute('data-part', q.name); g.appendChild(el); els.set(q.name, el); }
+      target.appendChild(g); svg = { g, els };
+    }
+    for (const q of L) {
+      const el = svg.els.get(q.name), s = partSize(D.byName.get(q.name), imgs.get(q.name).img);
+      if (!s) { set(el, 'display', 'none'); continue; }
+      set(el, 'href', q.src); set(el, 'width', s[0]); set(el, 'height', s[1]); set(el, 'transform', q.transform); set(el, 'opacity', q.opacity); set(el, 'display', q.visible ? 'inline' : 'none');
+    }
+  }
+  function drawPartsCanvas(p) {
+    for (const q of layout(D, p)) {
+      const e = imgs.get(q.name), s = partSize(D.byName.get(q.name), e.img);
+      if (!q.visible || q.opacity <= 0 || !s || !e.img) continue;
+      ctx.save();
+      for (const [x, y, r, sx, sy] of q.m) { if (x || y) ctx.translate(x, y); if (r) ctx.rotate(r * Math.PI / 180); if (sx !== 1 || sy !== 1) ctx.scale(sx, sy); }
+      ctx.globalAlpha = q.opacity; ctx.drawImage(e.img, 0, 0, s[0], s[1]);
+      ctx.restore();
+    }
+  }
   const A = {
     design: D,
     act(list) { actions = (list || []).slice().sort((a, b) => a[0] - b[0]); return A; },
     pose: t => pose(D, actions, t, opt),
-    render(t) { const p = A.pose(t), geo = geometry(D, p); if (isSVG) drawSVG(p, geo); else drawCanvas(p, geo); return p; },
+    render(t) {
+      const p = A.pose(t);
+      if (imgs) { if (isSVG) drawPartsSVG(p); else drawPartsCanvas(p); }
+      else { const geo = geometry(D, p); if (isSVG) drawSVG(p, geo); else drawCanvas(p, geo); }
+      return p;
+    },
     life(on) { opt.life = !!on; return A; },
   };
   return A;
@@ -298,5 +399,5 @@ function load(name) {
   return Promise.resolve().then(() => fetch(url)).then(r => { if (!r.ok) throw fail('HTTP ' + r.status); return r.json(); }, e => { throw fail(e && e.message || e); });
 }
 
-MH.rig = { FACES, normalize, pose, geometry, actor, load };
+MH.rig = { FACES, normalize, pose, geometry, layout, actor, load };
 })();
