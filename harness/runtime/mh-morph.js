@@ -3,7 +3,7 @@
  * shape(t, a, b, o): t ≤ t0 → a 그대로, t ≥ t0+dur → b 그대로, 그 사이는 flubber 보간(경로 쌍별 캐시). 모든 값은 t 의 순수 함수.
  * many(t, as[], bs[], o): 여러 경로 동시에 → string[]. 개수가 같으면 1:1, 한쪽이 1개면 나누기(1→N)·합치기(N→1).
  *   1→N·N→1 은 t0 이전에도 a 자체가 아니라 a 를 나눈 조각(또는 b 쪽 조각)을 돌려준다. 끝은 b 의 조각.
- * split(d) → { outer, holes[] }: 구멍 있는 글자를 바깥 윤곽만 모핑하고 구멍은 따로 그리기 위해 쓴다.
+ * split(d, s=1) → { outer, holes[] }: 구멍 있는 글자는 바깥 윤곽만 모핑하고, 구멍은 s 배(중심 기준)로 키워 evenodd 로 이어 붙인다.
  * 이징이 되튀는 종류(E.back 등)여도 진행도는 0..1 로 잘려 끝에서 b 를 넘지 않는다. */
 (function () {
 'use strict';
@@ -34,10 +34,21 @@ function roundRect(x, y, w, h, r = 0) {
   return `M${p(x + r, y)}H${n3(x + w - r)}C${p(x + w - r + c, y, x + w, y + r - c, x + w, y + r)}V${n3(y + h - r)}C${p(x + w, y + h - r + c, x + w - r + c, y + h, x + w - r, y + h)}H${n3(x + r)}C${p(x + r - c, y + h, x, y + h - r + c, x, y + h - r)}V${n3(y + r)}C${p(x, y + r - c, x + r - c, y, x + r, y)}Z`;
 }
 
-// 경로 → 바깥 윤곽(첫 부분경로)과 구멍들(나머지). 글자 'o' → 바깥 1 + 구멍 1. 구멍은 모핑하지 않고 장면이 따로 그린다.
-function split(d) {
+// 경로 → 바깥 윤곽(첫 부분경로)과 구멍들(나머지). 글자 'o' → 바깥 1 + 구멍 1.
+// 구멍은 모핑하지 않는다: s(0..1) 로 각 구멍을 제 숫자 bbox 중심에서 s 배 줄여, 바깥 윤곽 뒤에 이어 붙여 evenodd 로 그린다 (배경이 비쳐 보임).
+// toPathData 는 절대좌표 M/L/C/Q/Z 만 내므로 숫자를 (x,y) 쌍으로 보고 스케일하면 된다. s=1 이면 원래 문자열 그대로.
+const NUM = /-?\d*\.?\d+/g;
+function scaleHole(d, s) {
+  if (s === 1) return d;
+  const v = d.match(NUM).map(Number);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i + 1 < v.length; i += 2) { x0 = Math.min(x0, v[i]); x1 = Math.max(x1, v[i]); y0 = Math.min(y0, v[i + 1]); y1 = Math.max(y1, v[i + 1]); }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; let k = 0;
+  return d.replace(NUM, m => { const c = k++ % 2 ? cy : cx; return n3(c + (+m - c) * s); });
+}
+function split(d, s = 1) {
   const parts = String(d).split(/(?=[Mm])/).map(q => q.trim()).filter(Boolean);
-  return { outer: parts[0] || '', holes: parts.slice(1) };
+  return { outer: parts[0] || '', holes: parts.slice(1).map(h => scaleHole(h, s)) };
 }
 
 // ───────────── 보간 ─────────────

@@ -178,3 +178,19 @@ test('catalog: morph.shape api includes morph.many( (R14)', () => {
   const e = JSON.parse(fs.readFileSync('harness/catalog.json', 'utf8')).find(x => x.id === 'morph.shape');
   assert.deepEqual(e.api, ['morph.shape(', 'morph.many(']);
 });
+
+test('split(d, s): holes scale about their bbox centre; s=1 is the original string', async () => {
+  const M = load({ fetch: stubFetch() });
+  const [o] = await M.morph.text('o', { size: 300, x: 40, y: 400 });
+  const bbox = d => { const v = (d.match(/-?\d*\.?\d+/g) || []).map(Number); const xs = v.filter((_, i) => i % 2 === 0), ys = v.filter((_, i) => i % 2 === 1); return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2 }; };
+  const h1 = M.morph.split(o).holes, base = bbox(h1[0]);
+  assert.ok(base.w > 20 && base.h > 20);
+  assert.deepEqual(Array.from(M.morph.split(o, 1).holes), Array.from(h1));
+  assert.equal(M.morph.split(o, 0.5).outer, M.morph.split(o).outer);
+  const z = bbox(M.morph.split(o, 0).holes[0]);
+  assert.ok(z.w < 0.05 && z.h < 0.05, JSON.stringify(z));
+  const half = bbox(M.morph.split(o, 0.5).holes[0]);
+  assert.ok(Math.abs(half.w - base.w / 2) < 0.2 && Math.abs(half.h - base.h / 2) < 0.2, JSON.stringify([half, base]));
+  assert.ok(Math.abs(half.cx - base.cx) < 0.2 && Math.abs(half.cy - base.cy) < 0.2);
+  assert.equal((M.morph.split(o, 0.5).holes[0].match(/M/g) || []).length, 1);
+});
