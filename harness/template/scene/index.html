@@ -15,6 +15,7 @@
         bg: "#F2F1EC", paper: "#FFFFFF", ink: "#111111", accent: "#E8442E", muted: "#BDBAB2", note: "#666666",
         ease: [0.7, 0, 0.2, 1],   // 주 이징 cubic-bezier → GSAP 에서는 ease: "dna", 캔버스에서는 MH.E.bez(...DNA.ease)
         bpm: 120,                  // 리듬 그리드 → DNA.B(n) = n박의 초
+        motion: { ant: 0.12, over: 0.08, settle: 0.35, hold: 0.4, squash: 1.25 },   // 움직임 성격 → MH.motion() / MH.move() 기본값 (예비동작·지나침·안착·정지 유지·찌그러짐)
       };
       window.DNA.B = (n) => (n * 60) / window.DNA.bpm;
       window.DNA.easeFn = MH.E.bez(...window.DNA.ease);

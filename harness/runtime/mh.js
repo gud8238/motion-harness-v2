@@ -330,10 +330,101 @@ function gsapEase(name, x1, y1, x2, y2) {
 function trans(ctx, type, A, B, p, o = {}) { (TRANS[type] || TRANS.cut)(ctx, A, B, p, o, ctx.canvas.width, ctx.canvas.height); }
 function layer(W, H) { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; }
 
+// ───────────── ① 기본기: 자연스러운 움직임 (게이트 없음 — 어느 영상에든 쓴다) ─────────────
+// 전부 시간 t 의 순수 함수. 시크 순서가 뒤죽박죽이어도 같은 t 면 같은 값.
+// 기본 움직임 성격. 스타일 DNA 의 window.DNA.motion 이 있으면 덮어쓴다.
+//   ant: 예비동작(목표 반대로 거리의 몇 배) · over: 지나침 · settle: 안착 시간(초) · hold: 정지 유지(초) · squash: 찌그러짐 배율
+const MOTION = { ant: 0.12, over: 0.08, settle: 0.35, hold: 0.4, squash: 1.25 };
+const motion = () => Object.assign({}, MOTION, (typeof window !== 'undefined' && window.DNA && window.DNA.motion) || null);
+// 예비동작 → 본 이동 → 지나침 → 안착. t0 에 a 에서 출발해 b 에 도착 (a, b 는 숫자 또는 같은 길이의 배열).
+//   [t0, t0+0.2·dur] 목표 반대로 ant·(b−a) 만큼 움츠림 · [.., t0+dur] E.inOut 로 b+over·(b−a) 까지 · [.., +settle] 감쇠 진동으로 정확히 b 에 안착
+//   o: { dur=0.6, ant, over, settle } (생략하면 motion() 값). 앞 구간 끝값과 다음 구간 시작값이 같아 끊김이 없다. ant=0·over=0 이면 단조.
+function move(t, t0, a, b, o = {}) {
+  if (Array.isArray(a)) return a.map((v, i) => move(t, t0, v, b[i], o));
+  const m = motion(), dur = o.dur ?? 0.6, ant = o.ant ?? m.ant, over = o.over ?? m.over, settle = o.settle ?? m.settle;
+  const d = b - a, ta = 0.2 * dur, lo = a - ant * d, hi = b + over * d, s = t - t0;
+  if (s <= 0) return a;
+  if (s < ta) return lerp(a, lo, E.inOut(s / ta));
+  if (s < dur) return lerp(lo, hi, E.inOut((s - ta) / (dur - ta)));
+  if (settle <= 0 || s >= dur + settle) return b;
+  const p = (s - dur) / settle;                               // 안착: 지나침 → (1−p)² 로 줄어드는 2.5π 코사인 진동 → 정확히 b
+  return b + over * d * (1 - p) * (1 - p) * Math.cos(2.5 * Math.PI * p);
+}
+// 결정적 시뮬레이션: init 에서 시작해 step 간격으로 update 를 반복 적분, t 에서의 상태를 돌려준다.
+//   update(state, τ, step) → 새 상태. 반드시 새 값을 반환할 것 (state 를 제자리에서 고치면 메모가 오염된다).
+//   update 함수 객체를 키로 WeakMap 에 { t, n, step, state } 를 메모한다 — 요청 t 가 메모 시각 이상이면 이어서, 뒤로 가면 0부터 다시 적분.
+//   같은 update 에는 같은 step·init 을 써야 한다 (step 이 달라지면 처음부터 다시 계산). step 의 정수배가 아닌 t 는 남은 부분만 한 번 더 적분(메모하지 않음).
+const _sim = new WeakMap();
+function sim(t, step, init, update) {
+  if (!(t > 0)) return init;
+  const n = Math.floor(t / step + 1e-9);
+  let m = _sim.get(update);
+  if (!m || m.step !== step || n < m.n) m = { t: 0, n: 0, step, state: init };
+  for (; m.n < n; m.n++) m.state = update(m.state, m.n * step, step);
+  m.t = m.n * step; _sim.set(update, m);
+  const rem = t - m.t;
+  return rem > 1e-9 ? update(m.state, m.t, rem) : m.state;
+}
+// 쫓아가기(follow-through): 목표 fn(τ − lag) 를 3Hz 감쇠 스프링(감쇠비 damp)이 늦게 따라간다. 시작값은 fn(−lag), 속도 0.
+//   o: { lag=0.08, damp=0.6, step=1/120 }. update 클로저는 (fn, lag, damp, step) 별로 캐시해 옵션이 달라도 메모가 섞이지 않는다.
+const _follow = new WeakMap();
+function follow(t, fn, o = {}) {
+  const lag = o.lag ?? 0.08, damp = o.damp ?? 0.6, step = o.step ?? 1 / 120, key = `${lag}|${damp}|${step}`;
+  let byOpt = _follow.get(fn); if (!byOpt) _follow.set(fn, byOpt = new Map());
+  let c = byOpt.get(key);
+  if (!c) {
+    const w = TAU * 3;
+    c = { init: [fn(-lag), 0], update: ([x, v], tau, h) => { v += (w * w * (fn(tau - lag) - x) - 2 * damp * w * v) * h; return [x + v * h, v]; } };   // 세미 암시적 오일러
+    byOpt.set(key, c);
+  }
+  return sim(t, step, c.init, c.update)[0];
+}
+// 닫힌형 스프링을 GSAP 이징으로 등록 (DOM 장면용). preset: SPRING 키 또는 { f, z }. 반환: 이징 이름
+//   0 ~ 정착시간(|1−v|<0.001 가 계속 유지되는 첫 시각)을 60점으로 샘플한 SVG 경로를 CustomEase 로 등록. CustomEase 없으면 'back.out(1.7)'.
+function gsapSpring(name, preset = 'playful') {
+  if (!window.CustomEase) return 'back.out(1.7)';
+  const p = typeof preset === 'string' ? (SPRING[preset] || SPRING.playful) : preset, dt = 1 / 480;
+  let last = 0; for (let i = 1; i <= 9600; i++) if (Math.abs(1 - spring(i * dt, p)) >= 0.001) last = i;
+  const T = (last + 1) * dt, r5 = v => +v.toFixed(5), pts = [];
+  for (let i = 1; i <= 60; i++) pts.push(i === 60 ? '1,1' : `${r5(i / 60)},${r5(spring(T * i / 60, p))}`);
+  if (window.gsap) window.gsap.registerPlugin(window.CustomEase);
+  window.CustomEase.create(name, 'M0,0 L' + pts.join(' '));
+  return name;
+}
+// 해석적 탄도 물리 (화면 좌표: y 는 아래가 +, g 는 아래 방향 +). 모든 구간이 닫힌형이라 t 에서 바로 계산된다.
+//   body({ pos:[x,y], vel:[vx,vy], spin=0, rot=0, g=2400, bounce=0.4, floor=null, t0=0 }) → { at(t) → { x, y, rot } }
+//   floor 는 y 값. 닿으면 vy·(−bounce) 로 반사를 반복하고, 반사 뒤 |vy|<60 이면 floor 에 멈춘다. x 는 멈출 때까지 vx 로 계속 움직이고 그 뒤 고정, rot 은 spin·Δt (멈춘 뒤 고정).
+//   t ≤ t0 이면 시작 자세. floor 는 g>0 일 때만 의미가 있다.
+const phys = {
+  body({ pos, vel, spin = 0, rot = 0, g = 2400, bounce = 0.4, floor = null, t0 = 0 }) {
+    const hasFloor = floor != null && g > 0, segs = [];
+    let ts = t0, x = pos[0], y = hasFloor ? Math.min(pos[1], floor) : pos[1], vy = vel[1], rest = null;
+    for (let k = 0; ; k++) {
+      let dur = Infinity;
+      if (hasFloor) { const disc = vy * vy + 2 * g * (floor - y); dur = Math.max(0, (-vy + Math.sqrt(disc)) / g); }
+      segs.push({ ts, x, y, vy, dur });
+      if (!hasFloor) break;
+      const hit = vy + g * dur, nvy = -bounce * hit, xh = x + vel[0] * dur;
+      if (Math.abs(nvy) < 60 || k > 200) { rest = { t: ts + dur, x: xh }; break; }
+      ts += dur; x = xh; y = floor; vy = nvy;
+    }
+    const pose = (t, sg) => { const s = t - sg.ts, yy = sg.y + sg.vy * s + 0.5 * g * s * s; return { x: sg.x + vel[0] * s, y: hasFloor ? Math.min(floor, yy) : yy }; };
+    return {
+      at(t) {
+        if (t <= t0) return { x: pos[0], y: segs[0].y, rot };
+        if (rest && t >= rest.t) return { x: rest.x, y: floor, rot: rot + spin * (rest.t - t0) };
+        let sg = segs[0]; for (const q of segs) if (t >= q.ts) sg = q;
+        const p = pose(t, sg); p.rot = rot + spin * (t - t0); return p;
+      },
+    };
+  },
+};
+
 window.MH = {
   TAU, clamp, lerp, seg, map, mix, E, bezier, spring, SPRING, tween, springAt, kf, stagger, quant, beatOf, onBeat, breathe,
   rng, hash, noise, noise2, boil, rgba, mixColor, rr, circle, line, shadow, noShadow, grain, vignette, gradient, paper, withCam,
   FONT, font, wrap, txt, measure, txtIn, IMG, img, cutout, transitions: TRANS, trans, layer, subtitle,
   drive, stage, clear, load, gsapEase,
+  motion, move, follow, sim, gsapSpring, phys,
 };
 })();
