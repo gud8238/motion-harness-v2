@@ -21,6 +21,7 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').
 const W = +(idx.match(/id="root"[^>]*data-width="(\d+)"/) || [])[1] || 1920, H = +(idx.match(/id="root"[^>]*data-height="(\d+)"/) || [])[1] || 1080;
 
 const fmt = n => +(+n).toFixed(3);
+const DEFAULT_ACTOR = { body: { shape: 'blob', w: 220, h: 180, color: '#F2C94C' }, eyes: { shape: 'oval' }, mouth: { shape: 'smile' } };   // = _stage.html 의 FALLBACK
 function setRootDuration() {
   const hs = hosts(idx); const end = Math.max(0, ...hs.map(h => h.start + h.dur));
   idx = idx.replace(/(id="root"[^>]*data-duration=")[^"]*(")/, `$1${fmt(end)}$2`);
@@ -40,6 +41,9 @@ if (cmd === 'add') {
   let tpl = fs.readFileSync(path.join(HARNESS, 'template', 'scene', 'compositions', `_${kind}.html`), 'utf8');
   tpl = tpl.replaceAll('__ID__', id).replaceAll('__DUR__', String(dur)).replaceAll('__W__', String(W)).replaceAll('__H__', String(H));
   fs.writeFileSync(path.join(sceneDir, 'compositions', `${id}.html`), tpl);
+  // 무대 템플릿은 배우 파일 assets/actors/main.json 을 불러온다 — 없으면 HyperFrames 검사가 404 로 렌더를 막으므로 기본 코드 캐릭터로 만들어 둔다 (있으면 그대로)
+  const actor = path.join(sceneDir, 'assets', 'actors', 'main.json');
+  if (kind === 'stage' && !fs.existsSync(actor)) { fs.mkdirSync(path.dirname(actor), { recursive: true }); fs.writeFileSync(actor, JSON.stringify(DEFAULT_ACTOR, null, 2) + '\n'); }
   const tag = hostTag({ id, start, dur, kind, title: opt.title || id, note: opt.note || '', key: opt.key });
   idx = idx.replace('<!-- mh:scenes -->', `${tag}\n      <!-- mh:scenes -->`);
   save();

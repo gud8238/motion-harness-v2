@@ -194,3 +194,21 @@ test('unknown ease string throws listing valid keys', () => {
   assert.throws(() => MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'bez' }));
   MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'snap' });
 });
+
+// ── e2e 회귀 (Task 17a): 실제 HyperFrames check 에서 드러난 문제 ──
+test('fill overlay has a stable mh-fill id per host (make.mjs excuses text it covers)', () => {
+  const W = loadRuntime(RT, { document: { createElement: () => ({ style: {} }) } });
+  const root = { id: 'st1', kids: [], appendChild: n => root.kids.push(n) };
+  const mk = () => ({ parentNode: root, closest: () => root, offsetWidth: 10, offsetHeight: 10 });
+  const a = mk(), b = mk();
+  W.MH.trans2d.fill(0, a, { t0: 1, center: [0, 0] }); W.MH.trans2d.fill(0, b, { t0: 2, center: [0, 0] }); W.MH.trans2d.fill(0, a, { t0: 3, center: [0, 0] });
+  assert.deepEqual(root.kids.map(k => k.id), ['mh-fill-st1-1', 'mh-fill-st1-2', 'mh-fill-st1-3']);
+  W.MH.trans2d.fill(5, a, { t0: 1, center: [0, 0] }); assert.equal(root.kids.length, 3);   // 다시 불러도 같은 오버레이
+});
+test('camera layers (depth ≠ 0) are marked data-layout-allow-overflow; HUD (depth 0) is not', () => {
+  const mk = () => { const at = {}; return { style: {}, at, setAttribute: (k, v) => { at[k] = v; } }; };
+  const world = mk(), hud = mk(), far = mk(), bare = { style: {} };
+  MH.cam(world, { W: 100, H: 100 }).layer(hud, 0).layer(far, 0.4).layer(bare, 2);
+  assert.equal(world.at['data-layout-allow-overflow'], ''); assert.equal(far.at['data-layout-allow-overflow'], '');
+  assert.ok(!('data-layout-allow-overflow' in hud.at));
+});

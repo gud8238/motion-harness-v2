@@ -8,7 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { mblurArgs, mblurMixArgs, wantsMotionBlur, rootFps } from './lib/render.mjs';
+import { mblurArgs, mblurMixArgs, wantsMotionBlur, rootFps, checkFindings } from './lib/render.mjs';
 import { projectDir, parseArgs, die, hf, hfJSON, hosts, ffmpeg, run, rawFrames, writeJSON, readJSON, HARNESS, ROOT } from './_common.mjs';
 
 const { pos, opt } = parseArgs();
@@ -33,8 +33,7 @@ if (!opt['skip-audio'] && (fs.existsSync(path.join(work, 'sound.json')) || fs.ex
 // 2) 검사
 console.log('검사 중…');
 const chk = hfJSON(['check', sceneDir]);
-const findings = Object.entries(chk).filter(([, v]) => v && typeof v === 'object' && Array.isArray(v.findings)).flatMap(([k, v]) => v.findings.map(f => ({ area: k, ...f })))
-  .filter(f => !(f.code === 'console_warning' && /deprecated with r150|GPU stall|GL Driver/.test(f.message)));
+const findings = checkFindings(chk);
 const errors = findings.filter(f => f.severity === 'error'), warns = findings.filter(f => f.severity === 'warning');
 for (const f of [...errors, ...warns].slice(0, 20)) console.log(`  ${f.severity === 'error' ? '✖' : '⚠'} [${f.area}] ${f.code}: ${String(f.message).slice(0, 220)}${f.fixHint ? '\n      → ' + String(f.fixHint).slice(0, 200) : ''}`);
 writeJSON(path.join(work, 'check.json'), { ok: chk.ok, errors, warnings: warns });

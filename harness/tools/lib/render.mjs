@@ -1,4 +1,4 @@
-// 렌더 보조: 모션 블러(lens.mblur) — 4배 프레임으로 렌더한 뒤 4장씩 평균해 원래 fps 로 줄인다 (순수 함수, make.mjs 가 사용)
+// 렌더 보조 (순수 함수, make.mjs 가 사용): 모션 블러(lens.mblur) — 4배 프레임으로 렌더한 뒤 4장씩 평균해 원래 fps 로 줄인다 · hyperframes check 결과 정리
 import { parseEffectTable } from './plan.mjs';
 
 const SUB = 4;                                                    // 한 프레임당 하위 프레임 수
@@ -23,4 +23,12 @@ export function rootFps(html) {
   const m = tag && /\bdata-fps=["']([\d.]+)["']/.exec(tag[0]);
   const n = m ? parseFloat(m[1]) : NaN;
   return n > 0 ? n : 30;
+}
+
+// hyperframes check --json → 보고할 findings [{area, ...}]. 알려진 소음(three r150 경고·GPU 로그)과
+// trans.fill 오버레이(id mh-fill-…)가 덮은 글자(text_occluded)는 뺀다 — 화면 채움은 일부러 모든 것을 가린다
+export function checkFindings(chk) {
+  return Object.entries(chk ?? {}).filter(([, v]) => v && typeof v === 'object' && Array.isArray(v.findings)).flatMap(([k, v]) => v.findings.map(f => ({ area: k, ...f })))
+    .filter(f => !(f.code === 'console_warning' && /deprecated with r150|GPU stall|GL Driver/.test(f.message)))
+    .filter(f => !(f.code === 'text_occluded' && /^#mh-fill-/.test(f.containerSelector || '')));
 }

@@ -26,7 +26,7 @@
         [1.8, "main", "blink"],
         [2.4, "main", "face", "happy"],
       ];
-      // 배우 파일이 없으면 이 디자인으로 그린다 (scene/assets/actors/main.json 을 만들면 그 디자인을 쓴다)
+      // 배우 디자인 = scene/assets/actors/main.json (scene.mjs 가 이 기본 코드 캐릭터로 만들어 둔다 — 바꾸려면 그 파일을 고친다). 파일을 못 읽으면 이 디자인
       const FALLBACK = { body: { shape: "blob", w: 220, h: 180, color: "#F2C94C" }, eyes: { shape: "oval" }, mouth: { shape: "smile" } };
       st.actorTarget("main");   // 배우 자리를 먼저 잡는다 (배우는 불러온 뒤 등록) → 큐는 바로 넣어도 경고 없음
       st.cues(CUES);

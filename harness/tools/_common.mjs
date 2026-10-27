@@ -138,8 +138,18 @@ export async function chromium() {
   let pw;
   try { pw = await import(pathToFileURL(path.join(DATA, 'node_modules', 'playwright', 'index.mjs')).href); }
   catch { die('playwright 가 없습니다. 먼저 설치하세요: node "' + path.join(HARNESS, 'tools', 'setup.mjs') + '"'); }
-  const chromium = pw.chromium || pw.default?.chromium;
-  return chromium.launch({ args: ['--font-render-hinting=none'] });
+  const chromium = pw.chromium || pw.default?.chromium, opt = { args: ['--font-render-hinting=none'] };
+  const exe = browserPath(null);
+  if (exe) return chromium.launch({ ...opt, executablePath: exe });
+  try { return await chromium.launch(opt); }
+  catch (e) { const alt = browserPath(e); if (alt) return chromium.launch({ ...opt, executablePath: alt }); throw e; }
+}
+// Chromium 실행 파일 지정: MH_CHROMIUM 이 있으면 항상 그것. setup 이 받은 브라우저가 없을 때(받을 수 없는 컨테이너·사내망)는
+// HyperFrames 렌더 브라우저 변수(HYPERFRAMES_BROWSER_PATH · PRODUCER_HEADLESS_SHELL_PATH)를 대신 쓴다. 없으면 null (playwright 기본)
+export function browserPath(err, env = process.env) {
+  if (!err) return env.MH_CHROMIUM || null;
+  if (!/Executable doesn't exist/i.test(String(err.message))) return null;
+  return env.HYPERFRAMES_BROWSER_PATH || env.PRODUCER_HEADLESS_SHELL_PATH || null;
 }
 
 // index.html 의 장면 호스트 목록 (scene.mjs 가 쓰는 형식)

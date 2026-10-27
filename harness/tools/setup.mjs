@@ -32,7 +32,13 @@ if (!opt['skip-browser']) { const r = sh('npx', ['playwright', 'install', 'chrom
 
 console.log(`\n[3/6] HyperFrames ${CONFIG.hyperframes} (렌더 엔진)`);
 const v = hf(['--version']);
-(v.status === 0) ? ok('hyperframes ' + (v.stdout || '').trim().split('\n').pop()) : warn('hyperframes 실행 실패: ' + (v.stderr || '').slice(-300));
+if (v.status !== 0) warn('hyperframes 실행 실패: ' + (v.stderr || '').slice(-300));
+else {
+  ok('hyperframes ' + (v.stdout || '').trim().split('\n').pop());
+  // 렌더용 Chrome(headless shell)을 지금 받아 둔다 — 안 받아 두면 첫 렌더가 내려받느라 한참 멈춘 듯 보인다. HYPERFRAMES_BROWSER_PATH 가 있으면 그 브라우저를 쓴다
+  hf(['browser', 'ensure'], { inherit: true }).status === 0 ? ok('렌더용 Chrome')
+    : warn('렌더용 Chrome 을 받지 못했습니다 — 첫 렌더 때 다시 시도합니다. 내려받을 수 없는 환경이면 이미 있는 Chrome 경로를 환경변수 HYPERFRAMES_BROWSER_PATH 에 넣고 다시 실행하세요');
+}
 
 console.log('\n[4/6] 레퍼런스 라이브러리 (필요한 파일만)');
 ensureDir(LIB);

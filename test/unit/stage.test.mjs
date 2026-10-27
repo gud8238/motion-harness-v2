@@ -371,3 +371,17 @@ test('storyboardShots numbers stage beats and plain scenes together', () => {
   assert.deepEqual(shots.map(s => s.label.split('   ')[0]), ['#1 도입', '#2 st1·b1 첫', '#3 st1·b2', '#4 빈 무대']);
   assert.deepEqual(shots.map(s => s.t), [2.4, 7, 12, 15]);
 });
+
+// ── e2e 회귀 (Task 17a): 배우 파일이 없으면 hyperframes check 가 404 오류로 렌더를 막았다 ──
+test('scene.mjs add stage writes a default code actor main.json (kept if present)', () => {
+  const d = tempProject();
+  try {
+    assert.equal(addStage(d).status, 0);
+    const f = path.join(d, 'scene', 'assets', 'actors', 'main.json'), j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    assert.equal(j.body.shape, 'blob'); assert.ok(!j.kind);
+    const W = loadRuntime(RT); assert.doesNotThrow(() => W.MH.rig.normalize(j));
+    fs.writeFileSync(f, '{"body":{"shape":"capsule"}}');
+    assert.equal(spawnSync(process.execPath, [SCENE, 'add', '.', 'st2', 'stage'], { cwd: d, encoding: 'utf8' }).status, 0);
+    assert.equal(fs.readFileSync(f, 'utf8'), '{"body":{"shape":"capsule"}}');
+  } finally { fs.rmSync(d, { recursive: true, force: true }); }
+});

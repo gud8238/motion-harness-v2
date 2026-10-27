@@ -94,18 +94,20 @@ function cam(worldEl, o = {}) {
     },
     // shake(t0, t1, amp, hz) — amp = 화면 너비 비율(줌과 무관한 화면 크기), hz = 흔들리는 속도. 양 끝 0.1초 페이드
     shake(t0, t1, amp, hz) { shakes.push({ t0, t1, amp, hz, sx: 17.3 + shakes.length * 31.7, sy: 91.9 + shakes.length * 13.1 }); return self; },
-    layer(el, depth = 1) { layers.push({ el, depth }); return self; },
+    layer(el, depth = 1) { layers.push({ el, depth }); allowOverflow(el, depth); return self; },
     base, state, matrix, toScreen, toWorld,
     render(t) {
       for (const l of layers) { l.el.style.transform = `matrix(${matrix(t, l.depth).map(fmt).join(',')})`; l.el.style.transformOrigin = '0 0'; }
       return self;
     },
   };
-  if (worldEl) layers.push({ el: worldEl, depth: 1 });
+  if (worldEl) { layers.push({ el: worldEl, depth: 1 }); allowOverflow(worldEl, 1); }
   return self;
 }
 
 // ───────────── 전환: 카메라·도형·위치 이어 붙이기 ─────────────
+// 카메라가 움직이는 레이어는 화면 밖으로 나가는 게 정상 → HyperFrames 레이아웃 검사(escaped_container 등)에 의도된 넘침으로 표시. 화면 고정(깊이 0)은 그대로 검사
+function allowOverflow(el, depth) { if (depth !== 0 && el && el.setAttribute) el.setAttribute('data-layout-allow-overflow', ''); }
 const rectOf = r => (Array.isArray(r) ? r : [r.x ?? r.left, r.y ?? r.top, r.w ?? r.width, r.h ?? r.height]);
 const _fills = new WeakMap();                           // el → { [t0]: 오버레이 }
 const trans2d = {
@@ -122,6 +124,7 @@ const trans2d = {
       const host = (el.closest && el.closest('[data-composition-id]')) || el.parentNode;
       if (!host) throw new Error('trans.fill: 요소가 문서에 붙어 있지 않습니다(부모 없음). 요소를 DOM 에 넣은 뒤 부르세요.');
       ov = byT[t0] = document.createElement('div');
+      ov.id = `mh-fill-${host.id || 'root'}-${(host.__mhFills = (host.__mhFills || 0) + 1)}`;   // make.mjs 는 이 오버레이가 덮은 글자(text_occluded)를 의도된 가림으로 본다
       Object.assign(ov.style, { position: 'absolute', inset: '0', zIndex: '9999', pointerEvents: 'none', display: 'none' });
       host.appendChild(ov);
     }
