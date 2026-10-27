@@ -340,9 +340,12 @@ const motion = () => Object.assign({}, MOTION, (typeof window !== 'undefined' &&
 //   [t0, t0+0.2·dur] 목표 반대로 ant·(b−a) 만큼 움츠림 · [.., t0+dur] E.inOut 로 b+over·(b−a) 까지 · [.., +settle] 감쇠 진동으로 정확히 b 에 안착
 //   o: { dur=0.6, ant, over, settle } (생략하면 motion() 값). 앞 구간 끝값과 다음 구간 시작값이 같아 끊김이 없다. ant=0·over=0 이면 단조.
 function move(t, t0, a, b, o = {}) {
-  if (Array.isArray(a)) return a.map((v, i) => move(t, t0, v, b[i], o));
+  if (Array.isArray(a) || Array.isArray(b)) {   // 성분별. 길이는 b 기준 (b 가 숫자면 a 기준), a 에 없는 성분은 b 의 성분으로 본다(움직임 없음)
+    const bv = i => (Array.isArray(b) ? b[i] : b), av = i => (Array.isArray(a) ? a[i] ?? bv(i) : a);
+    return Array.from({ length: Array.isArray(b) ? b.length : a.length }, (_, i) => move(t, t0, av(i), bv(i), o));
+  }
   const m = motion(), dur = o.dur ?? 0.6, ant = o.ant ?? m.ant, over = o.over ?? m.over, settle = o.settle ?? m.settle;
-  const d = b - a, ta = 0.2 * dur, lo = a - ant * d, hi = b + over * d, s = t - t0;
+  const d = b - a, ta = 0.2 * dur, lo = a - ant * d, hi = settle > 0 ? b + over * d : b, s = t - t0;   // settle ≤ 0 이면 지나침 없이 b 에서 끝난다
   if (s <= 0) return a;
   if (s < ta) return lerp(a, lo, E.inOut(s / ta));
   if (s < dur) return lerp(lo, hi, E.inOut((s - ta) / (dur - ta)));
@@ -352,21 +355,31 @@ function move(t, t0, a, b, o = {}) {
 }
 // 결정적 시뮬레이션: init 에서 시작해 step 간격으로 update 를 반복 적분, t 에서의 상태를 돌려준다.
 //   update(state, τ, step) → 새 상태. 반드시 새 값을 반환할 것 (state 를 제자리에서 고치면 메모가 오염된다).
-//   update 함수 객체를 키로 WeakMap 에 { t, n, step, state } 를 메모한다 — 요청 t 가 메모 시각 이상이면 이어서, 뒤로 가면 0부터 다시 적분.
-//   같은 update 에는 같은 step·init 을 써야 한다 (step 이 달라지면 처음부터 다시 계산). step 의 정수배가 아닌 t 는 남은 부분만 한 번 더 적분(메모하지 않음).
+//   init 이 함수면 호출한 결과를 시작 상태로 쓴다. update 함수 객체를 키로 WeakMap 에 { t, n, step, init, state } 를 메모한다 —
+//   요청 t 가 메모 시각 이상이면 이어서, 뒤로 가거나 step·init 이 메모와 다르면(숫자는 Object.is, 배열·일반 객체는 얕은 비교) 0부터 다시 적분.
+//   step 의 정수배가 아닌 t 는 남은 부분만 한 번 더 적분(메모하지 않음).
 const _sim = new WeakMap();
+const _same = (a, b) => {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  return ka.length === kb.length && ka.every(k => Object.prototype.hasOwnProperty.call(b, k) && Object.is(a[k], b[k]));
+};
+const _snap = v => (Array.isArray(v) ? v.slice() : v && typeof v === 'object' ? Object.assign({}, v) : v);
 function sim(t, step, init, update) {
+  if (typeof init === 'function') init = init();
   if (!(t > 0)) return init;
   const n = Math.floor(t / step + 1e-9);
   let m = _sim.get(update);
-  if (!m || m.step !== step || n < m.n) m = { t: 0, n: 0, step, state: init };
+  if (!m || m.step !== step || n < m.n || !_same(m.init, init)) m = { t: 0, n: 0, step, init: _snap(init), state: init };
   for (; m.n < n; m.n++) m.state = update(m.state, m.n * step, step);
   m.t = m.n * step; _sim.set(update, m);
   const rem = t - m.t;
   return rem > 1e-9 ? update(m.state, m.t, rem) : m.state;
 }
 // 쫓아가기(follow-through): 목표 fn(τ − lag) 를 3Hz 감쇠 스프링(감쇠비 damp)이 늦게 따라간다. 시작값은 fn(−lag), 속도 0.
-//   o: { lag=0.08, damp=0.6, step=1/120 }. update 클로저는 (fn, lag, damp, step) 별로 캐시해 옵션이 달라도 메모가 섞이지 않는다.
+//   o: { lag=0.08, damp=0.6, step=1/120 }. fn 은 장면 바깥(모듈 수준)에서 한 번 만들어 재사용할 것 — draw 안에서 매번 새 람다를 넘기면 캐시·메모가 적중하지 않아 매 프레임 0부터 적분한다. update 클로저는 (fn, lag, damp, step) 별로 캐시해 옵션이 달라도 메모가 섞이지 않는다.
 const _follow = new WeakMap();
 function follow(t, fn, o = {}) {
   const lag = o.lag ?? 0.08, damp = o.damp ?? 0.6, step = o.step ?? 1 / 120, key = `${lag}|${damp}|${step}`;
@@ -380,7 +393,7 @@ function follow(t, fn, o = {}) {
   return sim(t, step, c.init, c.update)[0];
 }
 // 닫힌형 스프링을 GSAP 이징으로 등록 (DOM 장면용). preset: SPRING 키 또는 { f, z }. 반환: 이징 이름
-//   0 ~ 정착시간(|1−v|<0.001 가 계속 유지되는 첫 시각)을 60점으로 샘플한 SVG 경로를 CustomEase 로 등록. CustomEase 없으면 'back.out(1.7)'.
+//   preset 의 z(감쇠비)는 0보다 커야 한다 (0이면 정착하지 않는다). 0 ~ 정착시간(|1−v|<0.001 가 계속 유지되는 첫 시각)을 60점으로 샘플한 SVG 경로를 CustomEase 로 등록. CustomEase 없으면 'back.out(1.7)'.
 function gsapSpring(name, preset = 'playful') {
   if (!window.CustomEase) return 'back.out(1.7)';
   const p = typeof preset === 'string' ? (SPRING[preset] || SPRING.playful) : preset, dt = 1 / 480;

@@ -42,7 +42,7 @@ test('move works component-wise on arrays, with options', () => {
   assert.equal(v[0], MH.move(0.3, 0, 0, 100, { dur: 1 }));
   assert.equal(v[1], MH.move(0.3, 0, 10, -10, { dur: 1 }));
   assert.deepEqual(Array.from(MH.move(9, 0, [0, 10], [100, -10])), [100, -10]);
-  assert.equal(MH.move(0.75, 0, 0, 100, { dur: 1, ant: 0, over: 0 }), 100 * MH.E.inOut((0.75 - 0.2) / 0.8) * 1);
+  assert.equal(MH.move(0.75, 0, 0, 100, { dur: 1, ant: 0, over: 0 }), 100 * MH.E.inOut((0.75 - 0.2) / 0.8));
 });
 test('DNA.motion overrides defaults', () => {
   assert.deepEqual({ ...MH.motion() }, { ant: 0.12, over: 0.08, settle: 0.35, hold: 0.4, squash: 1.25 });
@@ -119,4 +119,31 @@ test('loadUMD returns module.exports or the single new global', () => {
     const b = loadUMD(w('b.js', '(function(r){r.Bar={b:2};})(this);'));
     assert.equal(b.b, 2);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+test('sim restarts when init or step differ (order independent)', () => {
+  const upd = (s, tau, h) => s + h;
+  assert.ok(Math.abs(MH.sim(1, 0.01, 0, upd) - 1) < 1e-9);
+  assert.ok(Math.abs(MH.sim(1, 0.01, 100, upd) - 101) < 1e-9);
+  assert.ok(Math.abs(MH.sim(1, 0.01, 0, upd) - 1) < 1e-9);
+  assert.ok(Math.abs(MH.sim(1, 0.02, 0, upd) - 1) < 1e-9);
+  const u2 = (s, tau, h) => s + h;
+  assert.ok(Math.abs(MH.sim(1, 0.01, 100, u2) - 101) < 1e-9);
+  assert.ok(Math.abs(MH.sim(1, 0.01, 0, u2) - 1) < 1e-9);
+  const u3 = ([x, v], tau, h) => [x + v * h, v];
+  assert.ok(Math.abs(MH.sim(1, 0.01, [0, 2], u3)[0] - 2) < 1e-9);
+  assert.ok(Math.abs(MH.sim(1, 0.01, [0, 3], u3)[0] - 3) < 1e-9);
+  let calls = 0; const u4 = ([x], tau, h) => { calls++; return [x + h]; };
+  MH.sim(1, 0.01, [0], u4); const c = calls; MH.sim(1.2, 0.01, [0], u4);   // 같은 값의 새 배열 → 이어서 적분
+  assert.ok(calls - c <= 21);
+  assert.ok(Math.abs(MH.sim(1, 0.01, () => 5, upd) - 6) < 1e-9);          // init 이 함수
+});
+test('move: settle<=0 ends the main phase exactly at b; array length mismatch is safe', () => {
+  const o = { settle: 0, dur: 1 };
+  assert.equal(MH.move(0.999999999, 0, 0, 100, o) <= 100 + 1e-6, true);
+  assert.ok(Math.abs(MH.move(0.999999, 0, 0, 100, o) - 100) < 1e-3);
+  assert.equal(MH.move(1, 0, 0, 100, o), 100);
+  const v = Array.from(MH.move(0.5, 0, [0], [100, 50], { dur: 1 }));
+  assert.equal(v.length, 2); assert.ok(v.every(Number.isFinite));
+  assert.equal(v[1], 50);                                   // a 에 없는 성분은 움직이지 않는다
+  assert.equal(Array.from(MH.move(0.5, 0, [0, 1, 2], [100, 50], { dur: 1 })).length, 2);
 });
