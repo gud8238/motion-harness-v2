@@ -497,6 +497,9 @@ export const evLabel = (name, c) => `${name.replace(/\.png$/, '')} · ${c.id} ·
 export const evidenceCell = (label, t0, t1, img) => `${label} ${t0.toFixed(2)}–${t1.toFixed(2)}s (${img})`;
 // 자동 strip 이름은 id·시작 시각으로 정한다 → 다시 분석해도 같은 후보는 같은 파일 (PLAN.md 효과 표가 계속 유효)
 export const isAutoStrip = f => /^ev_.+\.png$/.test(f) && !/^ev_m\d+\.png$/.test(f);
+// 다시 분석할 때 지울 자동 strip: 현재 후보에 없고 PLAN 효과 표가 인용하지 않은 것. 감지가 하나라도 실패했으면 아무것도 지우지 않는다(후보가 빠진 게 실패 탓일 수 있음).
+export const staleStrips = (files, cands, failed = [], cited = new Set()) =>
+  failed.length ? [] : files.filter(f => isAutoStrip(f) && !cited.has(f) && !cands.some(c => c.strip === f));
 export function nameStrips(cands) {
   const used = new Set();
   return cands.map(c => {

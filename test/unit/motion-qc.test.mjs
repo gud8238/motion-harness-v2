@@ -100,6 +100,7 @@ test('CLI: no checked rows → exit 0, empty json, single-cell image; missing pr
   fs.writeFileSync(path.join(proj, 'work', 'PLAN.md'), '# 계획\n');   // v1 프로젝트: 효과 표 없음
   const r = run(proj, '.');
   assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /효과 표가 없어\(v1 프로젝트\) 계획에 없는 효과 검사는 건너뜁니다/);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(proj, 'work', 'motion-qc.json'), 'utf8')), { rows: [], unplanned: [], stiffness: [] });
   if (hasPw) assert.ok(fs.statSync(path.join(proj, 'work', 'qc-motion.png')).size > 0);
   fs.rmSync(path.join(proj, 'out', `${name}.mp4`));
@@ -152,4 +153,21 @@ test('qcCompare: a zero-length touch does not pass (≥ 0.05 s overlap)', () => 
 test('dnaAccents: only the window.DNA object literal, not a later DNA-like name', () => {
   assert.deepEqual(dnaAccents('window.DNAX = { a: "#FF0000" };'), []);
   assert.deepEqual(dnaAccents('mywindow.DNA = { a: "#FF0000" };'), []);
+});
+
+// I4: v1 프로젝트(효과 표 없음)를 v2 로 렌더하면 패닝이 감지돼도 '계획에 없는 효과'로 보고하지 않는다. 효과 표가 있으면(행 0개라도) 보고한다.
+test('CLI: no effect table (v1) → unplanned check skipped with one line; a table with no rows still flags', () => {
+  const proj = projWith('모션 영상 4'), name = path.basename(proj);
+  const pgm = path.join(proj, 'pat.pgm'); fs.writeFileSync(pgm, Buffer.concat([Buffer.from('P5\n1280 360\n255\n'), Buffer.from(pattern(1280, 360, 7))]));
+  ff('-loop', '1', '-framerate', '24', '-i', pgm, '-vf', "crop=640:360:x='n*6':y=0,trim=duration=2,format=yuv420p,setsar=1", '-pix_fmt', 'yuv420p', path.join(proj, 'out', `${name}.mp4`));
+  fs.writeFileSync(path.join(proj, 'scene', 'index.html'), `<html><body><div id="root" data-width="640" data-height="360">${host('s1', 0, 2)}</div></body></html>`);
+  fs.writeFileSync(path.join(proj, 'work', 'PLAN.md'), '# 계획\n\n## 장면 표\n| # | 내용 |\n|---|---|\n| s1 | 목록 |\n');
+  const r = run(proj, '.');
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(proj, 'work', 'motion-qc.json'), 'utf8')).unplanned, []);
+  assert.match(r.stdout, /건너뜁니다/); assert.doesNotMatch(r.stdout, /⚠ 계획에 없는 효과/);
+  fs.writeFileSync(path.join(proj, 'work', 'PLAN.md'), '# 계획\n\n## 효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n|---|---|---|---|\n');
+  const r2 = run(proj, '.');
+  assert.ok(JSON.parse(fs.readFileSync(path.join(proj, 'work', 'motion-qc.json'), 'utf8')).unplanned.some(c => c.id === 'cam.pan'));
+  assert.match(r2.stdout, /⚠ 계획에 없는 효과 cam\.pan/); assert.doesNotMatch(r2.stdout, /건너뜁니다/);
 });

@@ -75,3 +75,20 @@ test('astral characters (emoji) before a comment do not shift stripping', () => 
   const r = findApiCalls('<p>🎬🎬</p> /* fx.vhs(t) */\nfx.glitch(t)', loadCatalog());
   assert.deepEqual(r.map(x => [x.api, x.line]), [['fx.glitch(', 2]]);
 });
+test('I1: MH.trans2d.<fn>( direct calls are gated like trans.<fn>(', () => {
+  const cat = loadCatalog();
+  for (const fn of ['fill', 'zoomThrough', 'whip', 'match'])
+    assert.deepEqual(findApiCalls(`MH.trans2d.${fn}(t, el)`, cat).map(x => x.ids), [['trans.' + fn]], fn);
+});
+test('R24: rig grow cue (single or double quoted) counts as trans.fill', () => {
+  const cat = loadCatalog();
+  assert.deepEqual(findApiCalls("actor.act([[2, 'grow', { fill: 'screen' }]])", cat).map(x => x.ids), [['trans.fill']]);
+  assert.deepEqual(findApiCalls('st.cues([[4.6, "boo", "grow"]])', cat).map(x => x.ids), [['trans.fill']]);
+  assert.deepEqual(findApiCalls('el.style.flexGrow = 1; // "grow"', cat), []);
+});
+test('I5: an unterminated /* or <!-- does not hide later calls', () => {
+  const cat = loadCatalog();
+  assert.deepEqual(findApiCalls('<p>a/*b</p>\n<script>trans.fill(t,el)</script>', cat).map(x => [x.api, x.line]), [['trans.fill(', 2]]);
+  assert.deepEqual(findApiCalls('<p>x <!-- y</p>\nfx.vhs(t)', cat).map(x => [x.api, x.line]), [['fx.vhs(', 2]]);
+  assert.deepEqual(findApiCalls('/* a */ x /* b\nfx.glitch(t)', cat).map(x => [x.api, x.line]), [['fx.glitch(', 2]]);
+});

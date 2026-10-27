@@ -8,7 +8,7 @@ const CATALOG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..',
 export const loadCatalog = () => JSON.parse(fs.readFileSync(CATALOG, 'utf8'));
 
 // 주석(// /* */ <!-- -->)을 같은 길이의 공백으로 치환한다(줄바꿈 유지 → 줄 번호 보존).
-// 문자열 안의 // (URL 등)은 주석이 아니다. ' " 는 줄 끝에서 끝나 HTML 본문의 아포스트로피가 뒤를 삼키지 않게 한다.
+// 문자열 안의 // (URL 등)·닫히지 않은 /* <!-- 는 주석이 아니다. ' " 는 줄 끝에서 끝나 HTML 본문의 아포스트로피가 뒤를 삼키지 않게 한다.
 export function stripComments(code) {
   const out = code.split('');                                  // UTF-16 단위 — code 의 인덱스와 일치
   const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== '\n' && out[k] !== '\r') out[k] = ' '; };
@@ -24,11 +24,13 @@ export function stripComments(code) {
       let j = i; while (j < n && code[j] !== '\n') j++;
       blank(i, j); i = j;
     } else if (c === '/' && d === '*') {
-      const e = code.indexOf('*/', i + 2), j = e < 0 ? n : e + 2;
-      blank(i, j); i = j;
+      const e = code.indexOf('*/', i + 2);
+      if (e < 0) { i += 2; continue; }                               // 닫히지 않은 /* 는 주석이 아니다(파일 끝까지 지우면 뒤 호출을 놓친다)
+      blank(i, e + 2); i = e + 2;
     } else if (c === '<' && code.startsWith('<!--', i)) {
-      const e = code.indexOf('-->', i + 4), j = e < 0 ? n : e + 3;
-      blank(i, j); i = j;
+      const e = code.indexOf('-->', i + 4);
+      if (e < 0) { i += 4; continue; }
+      blank(i, e + 3); i = e + 3;
     } else i++;
   }
   return out.join('');

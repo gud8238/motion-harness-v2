@@ -19,9 +19,9 @@
   {"id":"time.remap","tier":2,"module":"fx2d","api":["time.remap("],"detect":null,"desc":"구간마다 재생 속도를 바꾼다(슬로모션·급가속)","ko":["타임 리맵","슬로모션","속도 조절"]},
   {"id":"morph.shape","tier":2,"module":"morph","api":["morph.shape(","morph.many(","morph.text("],"detect":"blobContour","desc":"한 도형의 윤곽이 다른 도형으로 부드럽게 변한다","ko":["모핑","모양 변형"]},
   {"id":"morph.text","tier":2,"module":"morph","api":["morph.text("],"detect":"blobContour","desc":"글자 모양이 다른 글자나 도형으로 변한다","ko":["글자 변형","텍스트 모핑"]},
-  {"id":"trans.fill","tier":2,"module":"transitions","api":["trans.fill("],"detect":"compositeFill","desc":"도형이 커져 화면을 채우고 다음 배경이 된다","ko":["화면 채움","채움 전환"]},
-  {"id":"trans.zoomThrough","tier":2,"module":"transitions","api":["trans.zoomThrough("],"detect":"scaleSpike","desc":"대상 속으로 확대해 들어가며 다음 장면으로 넘어간다","ko":["줌 스루","뚫고 지나가기"]},
-  {"id":"trans.whip","tier":2,"module":"transitions","api":["trans.whip("],"detect":"blurSpike","desc":"카메라를 빠르게 휘두르며 흐려진 채 다음 장면으로 넘어간다","ko":["휙 넘김","휩팬","빠른 패닝 전환"]},
-  {"id":"trans.match","tier":2,"module":"transitions","api":["trans.match("],"detect":"blobAcrossCut","desc":"컷 앞뒤에서 비슷한 모양·위치의 요소로 이어 붙인다","ko":["매치 컷","모양 이어붙이기"]},
+  {"id":"trans.fill","tier":2,"module":"transitions","api":["trans.fill(","trans2d.fill(","'grow'","\"grow\""],"detect":"compositeFill","desc":"도형이 커져 화면을 채우고 다음 배경이 된다","ko":["화면 채움","채움 전환"]},
+  {"id":"trans.zoomThrough","tier":2,"module":"transitions","api":["trans.zoomThrough(","trans2d.zoomThrough("],"detect":"scaleSpike","desc":"대상 속으로 확대해 들어가며 다음 장면으로 넘어간다","ko":["줌 스루","뚫고 지나가기"]},
+  {"id":"trans.whip","tier":2,"module":"transitions","api":["trans.whip(","trans2d.whip("],"detect":"blurSpike","desc":"카메라를 빠르게 휘두르며 흐려진 채 다음 장면으로 넘어간다","ko":["휙 넘김","휩팬","빠른 패닝 전환"]},
+  {"id":"trans.match","tier":2,"module":"transitions","api":["trans.match(","trans2d.match("],"detect":"blobAcrossCut","desc":"컷 앞뒤에서 비슷한 모양·위치의 요소로 이어 붙인다","ko":["매치 컷","모양 이어붙이기"]},
   {"id":"trans.shared","tier":2,"module":"stage","api":["MH.stage2d("],"detect":"blobAcrossCut","desc":"같은 요소가 장면을 가로질러 이어진다","ko":["공유 요소","캐릭터 연결"]}
 ]

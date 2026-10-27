@@ -7,7 +7,10 @@
 import fs from 'fs';
 import path from 'path';
 import { projectDir, parseArgs, die, ensureDir, ffmpeg, probe, rawFrames, palette, board, chromium, writeJSON, fwd, ROOT } from './_common.mjs';
-import { frameDiffs, spikeCuts, mergeCuts, measureSeries, buildCandidates, estimateStrength, stripImage, evidenceBoard, evLabel, evidenceCell, nameStrips, isAutoStrip, NO_CANDIDATES } from './lib/evidence.mjs';
+import { frameDiffs, spikeCuts, mergeCuts, measureSeries, buildCandidates, estimateStrength, stripImage, evidenceBoard, evLabel, evidenceCell, nameStrips, staleStrips, NO_CANDIDATES } from './lib/evidence.mjs';
+import { parseEffectTable } from './lib/plan.mjs';
+
+const readText = f => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
 
 const { pos, opt } = parseArgs();
 const STRIP = pos[0] === 'strip', args = STRIP ? pos.slice(1) : pos;
@@ -163,7 +166,8 @@ async function analyzeVideo(file) {
   try { const series = measureSeries(file, P, { cuts, accents: accents.map(a => a.hex), failed: evFailed }); cands = buildCandidates(series, cuts, P.duration, ...series.size, { failed: evFailed }); }
   catch (e) { evFailed.push('measureSeries'); console.error(`⚠ 감지 실패: measureSeries: ${e.message}`); }
   cands = nameStrips(cands);
-  for (const f of fs.readdirSync(out)) if (isAutoStrip(f) && !cands.some(c => c.strip === f)) fs.rmSync(path.join(out, f));   // 사라진 후보의 자동 strip (수동 ev_mNN 은 유지)
+  const cited = new Set(parseEffectTable(readText(path.join(proj, 'work', 'PLAN.md'))).filter(r => r.evidence.ref === base && r.evidence.img).map(r => r.evidence.img));
+  for (const f of staleStrips(fs.readdirSync(out), cands, evFailed, cited)) fs.rmSync(path.join(out, f));   // 사라진 후보의 자동 strip (수동 ev_mNN·효과 표가 인용한 것·감지 실패 시는 유지)
   for (const c of cands) await stripImage(file, P, c.t0, c.t1, path.join(out, c.strip), { browser, title: evLabel(c.strip, c) });
   writeJSON(path.join(out, 'evidence.json'), { ref: fwd(path.relative(proj, file)), label: base, candidates: cands });
   const evPages = await evidenceBoard(cands, out, { browser, title: `${path.basename(file)} — 효과 근거 후보 ${cands.length}개` });

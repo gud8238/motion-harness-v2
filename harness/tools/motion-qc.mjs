@@ -1,6 +1,6 @@
 // 모션 검수: 렌더한 우리 영상에 레퍼런스와 같은 감지기를 돌려, 효과 표의 ②·③ 효과가 계획한 자리에 실제로 나타나는지 확인한다
 //   node motion-qc.mjs 모션1   → work/motion-qc.json, work/qc-motion.png (효과 행마다 위: 레퍼런스 근거 구간 6프레임, 아래: 우리 영상 같은 길이 6프레임)
-// ✔ 계획한 자리에서 감지됨 · ✗ 감지 안 됨 · ? 감지기가 없거나 위치를 해석할 수 없음(눈으로 확인). ⚠ 계획에 없는 ② 효과, 딱딱한 움직임(등속·급정지).
+// ✔ 계획한 자리에서 감지됨 · ✗ 감지 안 됨 · ? 감지기가 없거나 위치를 해석할 수 없음(눈으로 확인). ⚠ 계획에 없는 ② 효과(효과 표가 있을 때만), 딱딱한 움직임(등속·급정지).
 // 프로젝트 폴더나 out/<폴더이름>.mp4 가 없을 때만 종료 2, 그 밖에는 항상 0 (make.mjs 가 경고로만 다룬다).
 import fs from 'fs';
 import os from 'os';
@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { DATA, hosts, probe, chromium, board, writeJSON, readJSON } from './_common.mjs';
 import { measureSeries, buildCandidates, stripImage, TH, vivid } from './lib/evidence.mjs';
-import { parseEffectTable, readBeats, resolveWhere } from './lib/plan.mjs';
+import { parseEffectTable, hasEffectTable, readBeats, resolveWhere } from './lib/plan.mjs';
 import { loadCatalog } from './lib/catalog.mjs';
 
 // 딱딱한 움직임 문턱 (전역 움직임 gm, 1프레임 = 1/12초 걸음의 속력, 시계열 px)
@@ -122,7 +122,8 @@ export async function runMotionQc(projDir, { log = console.log } = {}) {
     for (const a of readJSON(path.join(work, d, 'analysis.json'))?.color?.accents || []) accents.add(a);
   }
 
-  const rows = parseEffectTable(read(path.join(work, 'PLAN.md'))).filter(r => (r.tier === 2 || r.tier === 3) && byId.has(r.id));
+  const planMd = read(path.join(work, 'PLAN.md')), table = hasEffectTable(planMd);   // 효과 표가 없으면 v1 프로젝트 → '계획에 없는 효과' 검사를 건너뛴다
+  const rows = parseEffectTable(planMd).filter(r => (r.tier === 2 || r.tier === 3) && byId.has(r.id));
   const ranges = {};
   for (const r of rows) ranges[r.where] = resolveWhere(r.where, hs, beats);
 
@@ -131,7 +132,7 @@ export async function runMotionQc(projDir, { log = console.log } = {}) {
   const cmp = qcCompare(rows, ranges, found, catalog, { cuts });
   const result = {
     rows: cmp.map(c => ({ ...c, found: found.filter(f => f.id === c.id) })),
-    unplanned: unplanned(found, parseEffectTable(read(path.join(work, 'PLAN.md'))), catalog),
+    unplanned: table ? unplanned(found, parseEffectTable(planMd), catalog) : [],
     stiffness: stiffness(series, { cuts }),
   };
   writeJSON(path.join(work, 'motion-qc.json'), result);
@@ -143,6 +144,7 @@ export async function runMotionQc(projDir, { log = console.log } = {}) {
     else log(`? ${r.id} (${r.where}) — ${r.why || (byId.get(r.id).detect ? '사용 위치를 읽지 못해' : '감지기가 없어')} 눈으로 확인`);
   }
   if (!result.rows.length) log('· 검사할 효과 행(② ③ 단계)이 없습니다');
+  if (!table) log('· PLAN.md 에 효과 표가 없어(v1 프로젝트) 계획에 없는 효과 검사는 건너뜁니다');
   for (const c of result.unplanned) log(`⚠ 계획에 없는 효과 ${c.id} ${fx(c.t0)}–${fx(c.t1)}s — ${c.signal}`);
   for (const s of result.stiffness) log(`⚠ 딱딱한 움직임 ${s.kind === 'linear' ? '(이징 없는 등속)' : '(감속 없이 멈춤)'} ${fx(s.t0)}–${fx(s.t1)}s`);
 

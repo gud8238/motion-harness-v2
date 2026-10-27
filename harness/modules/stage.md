@@ -1,6 +1,6 @@
 # stage — 무대 모드 (원테이크)
 
-`scene.mjs add . st1 stage --dur 12` → `compositions/st1.html`. `MH.stage2d(` 는 효과 표에 `cam.onetake`·`trans.shared` 근거가 필요(무대 카메라 큐도 이 근거로 덮인다, R2).
+`scene.mjs add . st1 stage --dur 12` → `compositions/st1.html`. `MH.stage2d(` 는 `cam.onetake`·`trans.shared` 근거가 필요(카메라 큐 포함, R2). 배우 `'grow'` 큐는 `trans.fill` 근거도(R24).
 
 | 구성 | 역할 |
 |---|---|
@@ -26,7 +26,7 @@ st.cues([
 ]);
 MH.drive(tl, DUR, t => st.render(t));
 ```
-같은 시각은 적은 순. 자리도 배우도 없는 이름은 렌더 때 경고(무대별 1회).
+같은 시각은 적은 순. 모르는 이름은 렌더 때 경고(무대별 1회).
 
 ## 세트
 `'in'|'out'`, `{dur=0.5, from: below|above|left|right|fade|scale}` (out 은 `to` 도). 위치 ±0.15·H/W·배율 0.6↔1 은 MH.move, 투명도는 선형. 첫 큐가 in 이면 그 전엔 숨김, out 이 끝나면 숨김. 도중에 반대 큐가 오면 그 순간 상태에서 출발. 세트 transform 은 무대 몫 → 세트 안 GSAP 은 안쪽 자식에. 쌓기: 깊이 오름차순(<1 월드 뒤, >1 앞) → 배우 → depth 0(화면 고정 HUD, 맨 위).

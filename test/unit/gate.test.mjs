@@ -240,3 +240,17 @@ test('morph.text( glyph loading passes with a morph.shape row (eyes → logo let
   const none = runGate(camProject(code, null));
   assert.deepEqual(none.violations.map(v => [v.id, v.line]), [['morph.shape/morph.text', 3], ['morph.shape', 4]]);
 });
+// I1: MH.trans2d.fill( 직접 호출도 trans.fill 근거가 필요하다
+test('MH.trans2d.fill( with no row is blocked as no-row', () => {
+  const r = runGate(camProject('MH.trans2d.fill(t, el, { t0: 1 });', null));
+  assert.deepEqual(r.violations.map(v => [v.id, v.reason]), [['trans.fill', 'no-row']]);
+  assert.equal(runGate(camProject('MH.trans2d.fill(t, el, { t0: 1 });', '| trans.fill | ② | b 1–2s (ev_x.png) | s1 |')).ok, true);
+});
+// R24: 배우 grow(몸통이 화면을 덮음)는 ② trans.fill — dom·stage 장면 모두
+test('rig grow cue needs trans.fill evidence (R24)', () => {
+  const dom = "const a = MH.rig.actor(svg, D);\na.act([[2, 'grow', { fill: 'screen' }]]);";
+  assert.deepEqual(runGate(camProject(dom, null)).violations.map(v => [v.id, v.reason, v.line]), [['trans.fill', 'no-row', 3]]);
+  assert.equal(runGate(camProject(dom, '| trans.fill | ② | b 1–2s (ev_x.png) | s1 |')).ok, true);
+  const stage = 'st.cues([[4.6, "boo", "grow", { dur: 0.8 }]]);';
+  assert.deepEqual(runGate(camProject(stage, null)).violations.map(v => [v.id, v.reason]), [['trans.fill', 'no-row']]);
+});

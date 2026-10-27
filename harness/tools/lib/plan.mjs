@@ -27,9 +27,12 @@ function parseTier(cell) {
 // "효과 표" 가 있는 표 밖의 줄 다음의 첫 마크다운 표(헤더·구분선 제외)를 행으로 읽는다. 없으면 [].
 // 표 칸 안의 "효과 표"(예: DNA 칸 "(효과 표 참고)")는 제목이 아니다. 열이 헤더보다 많거나 첫 칸이 `#`·`효과 id` 인 행(붙어 있는 다음 표)에서 멈춘다.
 // 열이 모자란 행은 사람이 칸을 빠뜨린 효과 행으로 보고 읽는다(근거 칸 invalid → 게이트가 보고).
+const tableHeading = lines => lines.findIndex(l => !isRow(l) && l.includes('효과 표'));
+// 효과 표 제목이 있는가 (없으면 v1 프로젝트)
+export const hasEffectTable = md => tableHeading(String(md).split(/\r?\n/)) >= 0;
 export function parseEffectTable(md) {
   const lines = String(md).split(/\r?\n/);
-  const h = lines.findIndex(l => !isRow(l) && l.includes('효과 표'));
+  const h = tableHeading(lines);
   if (h < 0) return [];
   let i = h + 1;
   while (i < lines.length && !isRow(lines[i])) i++;

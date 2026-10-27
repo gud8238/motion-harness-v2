@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { buildCandidates, estimateStrength, measureSeries, seriesSize, nameStrips, isAutoStrip, evidenceCell, spikeCuts, frameDiffs, mergeCuts, TH } from '../../harness/tools/lib/evidence.mjs';
+import { buildCandidates, estimateStrength, measureSeries, seriesSize, nameStrips, isAutoStrip, staleStrips, evidenceCell, spikeCuts, frameDiffs, mergeCuts, TH } from '../../harness/tools/lib/evidence.mjs';
 import { parseEffectTable } from '../../harness/tools/lib/plan.mjs';
 import { probe } from '../../harness/tools/_common.mjs';
 import { pattern, rng } from '../helpers/frames.mjs';
@@ -303,4 +303,12 @@ test('yellow disk grows over a flat white screen with a few text lines in 0.4 s 
   assert.ok(c && c.t0 >= 0.8 && c.t1 <= 1.6, JSON.stringify(c));
   const cut = raw('cut_wy.mp4', W, H, 24, 48, t => t < 1 ? canvas(W, H, [255, 255, 255]) : canvas(W, H, Y)), Q = probe(cut);
   assert.ok(!ids(buildCandidates(measureSeries(cut, Q), [], Q.duration)).includes('trans.fill'));   // 컷 검출 전이라도 한 프레임 만에 바뀐 색은 채움이 아니다
+});
+test('staleStrips: drops vanished auto strips only; keeps manual, cited, and everything when detection failed (I2)', () => {
+  const files = ['ev_cam-pan_1.00.png', 'ev_fx-vhs_2.00.png', 'ev_trans-fill_3.00.png', 'ev_m01.png', 'evidence.png', 'card.png'];
+  const cands = [{ strip: 'ev_cam-pan_1.00.png' }];
+  assert.deepEqual(staleStrips(files, cands), ['ev_fx-vhs_2.00.png', 'ev_trans-fill_3.00.png']);
+  assert.deepEqual(staleStrips(files, cands, [], new Set(['ev_trans-fill_3.00.png'])), ['ev_fx-vhs_2.00.png']);
+  assert.deepEqual(staleStrips(files, [], ['measureSeries']), []);
+  assert.deepEqual(staleStrips(files, cands, ['rowJitter']), []);
 });

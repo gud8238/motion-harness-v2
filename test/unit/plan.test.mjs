@@ -115,3 +115,9 @@ test('a scene table directly after the effect table is not read', () => {
   const second = `효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| fx.vhs | ③ | 사용자 지정 | s4 |\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| lens.dof | ② | b 1–2s (e.png) | s1 |\n`;
   assert.deepEqual(parseEffectTable(second).map(r => r.id), ['fx.vhs']);
 });
+test('hasEffectTable: heading outside a table row, v1 PLAN without it', async () => {
+  const { hasEffectTable } = await import('../../harness/tools/lib/plan.mjs');
+  assert.equal(hasEffectTable('# 계획\n\n## 효과 표\n| 효과 id | 단계 |\n'), true);
+  assert.equal(hasEffectTable('# 계획\n| s1 | DNA (효과 표 참고) |\n'), false);
+  assert.equal(hasEffectTable(''), false);
+});

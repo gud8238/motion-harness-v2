@@ -1,7 +1,7 @@
 # rig2d — 2D 캐릭터
 
 ## 고르기
-레퍼런스 캐릭터가 몸통 1개 + 단순 눈·입 도형 → **코드**(`MH.rig.actor(svg|ctx, design)`). 윤곽선·명암·질감이 그림체 → **파츠 시트**(`actor(target, rigJson)`, `kind:'parts'`). 동작 목록은 공통. 판정은 소스 점검 표에 기록.
+레퍼런스 캐릭터가 몸통 1개 + 단순 눈·입 도형 → **코드**(`MH.rig.actor(svg|ctx, design)`). 윤곽선·명암·질감이 그림체 → **파츠 시트**(`actor(target, rigJson)`, `kind:'parts'`). 동작은 공통. 판정은 소스 점검 표에.
 
 ## design (코드)
 `body{shape,w,h,r,color}` roundRect|blob|capsule · `eyes{shape,gap,size,y,color}` dot|oval|line|arc|arcDown|star · `mouth{shape,w,y}` none|line|smile|open|o · `limbs[{at,len,w,angle}]` · `extras[{d,fill}]`
@@ -10,7 +10,7 @@
 - blink · look {x,y} -1..1 · face idle|happy|sweat|squint|star|sad|surprise
 - squash/stretch {amt|x,y} 유지, {x:1,y:1} 복귀 · hop {to,h} · walk {to,steps}
 - talk {dur} · nod · shake · enter/exit {from|to: below|above|left|right|scale}
-- grow {fill:'screen'} 몸통이 화면을 덮음 · anchor {to:'screen'|'world'}
+- grow {fill:'screen'} 화면을 덮음 → ② trans.fill 근거(R24) · anchor {to:'screen'|'world'}
 
 ## 파츠 시트 프롬프트
 `<CHARACTER>`·`<STYLE SUFFIX>` 를 DNA·레퍼런스로 채워 보여 준다(GPT 에 그대로 붙임).

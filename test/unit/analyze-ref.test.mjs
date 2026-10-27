@@ -67,7 +67,10 @@ test('candidates: label in evidence.json, ready-to-paste 근거 cells that pass 
 
   // 다시 분석: 같은 이름, 사라진 후보의 자동 strip 은 삭제, 수동 strip 은 유지 → 게이트 계속 통과
   fs.writeFileSync(path.join(out, 'ev_cam-push_9.99.png'), 'x'); fs.writeFileSync(path.join(out, 'ev_01.png'), 'x'); fs.writeFileSync(path.join(out, 'ev_m01.png'), 'x');
+  fs.writeFileSync(path.join(out, 'ev_trans-whip_1.50.png'), 'x');                       // 효과 표가 인용한 자동 strip 은 후보에서 빠져도 남는다 (I2)
+  fs.appendFileSync(path.join(proj, 'work', 'PLAN.md'), '| trans.whip | ② | b_ref 1.50–1.90s (ev_trans-whip_1.50.png) | s1 |\n');
   assert.equal(run(proj, '.', 'ref/b ref.mp4').status, 0);
+  assert.ok(fs.existsSync(path.join(out, 'ev_trans-whip_1.50.png')));
   const ev2 = JSON.parse(fs.readFileSync(path.join(out, 'evidence.json'), 'utf8'));
   assert.deepEqual(ev2.candidates.map(c => c.strip), ev.candidates.map(c => c.strip));
   assert.ok(!fs.existsSync(path.join(out, 'ev_cam-push_9.99.png')) && !fs.existsSync(path.join(out, 'ev_01.png')) && fs.existsSync(path.join(out, 'ev_m01.png')));
