@@ -130,7 +130,8 @@ function pose(design, actions, t, o = {}) {
       }
       case 'grow': {   // R9: 몸통의 짧은 변이 화면 대각선을 덮을 때까지, 화면 중앙으로, anchor 0→1
         const dur = opts.dur ?? 0.8, S = opts.scale ?? Math.hypot(W, H) / Math.min(D.body.w, D.body.h);
-        ease('sx', S, dur); ease('sy', S, dur); ease('x', W / 2, dur); ease('y', H / 2, dur); ease('anchor', 1, dur, flat);
+        ease('sx', S, dur, { ant: 0 }); ease('sy', S, dur, { ant: 0 });   // R17: 배율은 예비동작 없이 (음수 배율 금지)
+        ease('x', W / 2, dur); ease('y', H / 2, dur); ease('anchor', 1, dur, flat);
         break;
       }
       case 'anchor': ease('anchor', opts.to === 'screen' ? 1 : 0, opts.dur ?? 0.4, flat); break;

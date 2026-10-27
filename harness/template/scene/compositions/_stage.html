@@ -15,7 +15,7 @@
     (function () {
       const DUR = __DUR__, W = __W__, H = __H__;
       const st = MH.stage2d(document.getElementById("__ID__"), { W, H, dur: DUR }).beatsFrom("#__ID__-beats");
-      // 세트: 월드 좌표(px)에 둔다. 첫 큐가 'in' 이면 그때까지 숨김. 깊이가 다르면 { depth: 0.5 } 처럼
+      // 세트: 월드 좌표(px)에 둔다. 첫 큐가 'in' 이면 그때까지 숨김. 깊이: 1 미만 = 월드 뒤, 1 초과 = 월드 앞(배우 아래), 0 = 화면 고정 맨 위(HUD)
       st.set("card", document.getElementById("__ID__-card"), { at: [W / 2 - 320, H / 2 - 220] });
       // 큐시트 [t, 대상, 동작, 옵션] — 대상: "cam" | "set:<이름>" | 배우 이름
       const CUES = [
@@ -28,12 +28,14 @@
       ];
       // 배우 파일이 없으면 이 디자인으로 그린다 (scene/assets/actors/main.json 을 만들면 그 디자인을 쓴다)
       const FALLBACK = { body: { shape: "blob", w: 220, h: 180, color: "#F2C94C" }, eyes: { shape: "oval" }, mouth: { shape: "smile" } };
+      st.actorTarget("main");   // 배우 자리를 먼저 잡는다 (배우는 불러온 뒤 등록) → 큐는 바로 넣어도 경고 없음
+      st.cues(CUES);
       const tl = gsap.timeline({ paused: true });
       window.__hf = window.__hf || {}; window.__hf.buildReady = window.__hf.buildReady || {};
-      // 배우를 등록한 뒤 큐를 넣는다 (큐 → 배우 동작 연결)
+      const useFallback = e => { console.warn((e && e.message || e) + " — 기본 디자인으로 그립니다."); st.actor("main", FALLBACK); };
       window.__hf.buildReady["__ID__-actor"] = MH.rig.load("main")
-        .catch(e => { console.warn(e.message + " — 기본 디자인으로 그립니다."); return FALLBACK; })
-        .then(design => { st.actor("main", design).cues(CUES); st.render(tl.time()); });
+        .then(design => { try { st.actor("main", design); } catch (e) { useFallback(e); } }, useFallback)
+        .then(() => st.render(tl.time()));
       MH.drive(tl, DUR, t => st.render(t));
       window.__timelines["__ID__"] = tl;
     })();

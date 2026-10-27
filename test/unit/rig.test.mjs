@@ -471,3 +471,11 @@ test('rig2d.md size and prompt placeholders', () => {
   for (const n of [ex.eyesClosed, ex.talkMouth, ...Object.values(ex.faces).flatMap(f => [f.eyes, f.mouth])]) assert.ok(names.has(n), n);
   assert.doesNotThrow(() => MH.rig.normalize(ex));
 });
+
+// R17: grow 의 배율은 예비동작 없이 (음수 배율 금지)
+test('grow never makes sx/sy negative (ant 0 for scale)', () => {
+  const A = [[0.5, 'grow', { dur: 0.8 }]];
+  for (let i = 0; i <= 240; i++) { const p = MH.rig.pose(D, A, i / 120, { life: false, W: 1000, H: 500 }); assert.ok(p.sx >= 1 - 1e-9 && p.sy >= 1 - 1e-9, `t=${i / 120} sx=${p.sx}`); }
+  const W = loadRuntime(RT); W.DNA = { motion: { ant: 0.5, over: 0.08, settle: 0.35 } };   // 큰 예비동작 DNA 에서도
+  for (let i = 0; i <= 240; i++) { const p = W.MH.rig.pose(D, A, i / 120, { life: false, W: 1000, H: 500 }); assert.ok(p.sx > 0 && p.sy > 0, `t=${i / 120} sx=${p.sx}`); }
+});

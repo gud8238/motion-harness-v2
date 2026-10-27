@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { projectDir, parseArgs, die, hosts, hfJSON, board, ensureDir, ROOT } from './_common.mjs';
 import { readBeats } from './lib/plan.mjs';
-import { storyboardShots } from './lib/board-shots.mjs';
+import { storyboardShots, beatWarnings } from './lib/board-shots.mjs';
 
 const { pos, opt } = parseArgs();
 const proj = projectDir(pos[0]);
@@ -27,7 +27,11 @@ else if (opt.strip) {
   shots = Array.from({ length: n }, (_, i) => { const t = r3(s.start + s.dur * (i + 0.5) / n); return { t, label: `${s.id} · ${t.toFixed(2)}s` }; });
 } else {
   tag = 'storyboard';   // 무대(kind stage)는 compositions 파일의 비트 JSON 으로 비트마다 한 칸
-  const beatsOf = h => { const f = path.join(sceneDir, h.src || `compositions/${h.id}.html`); return fs.existsSync(f) ? readBeats(fs.readFileSync(f, 'utf8'), h.id) : []; };
+  const beatsOf = h => {
+    const f = path.join(sceneDir, h.src || `compositions/${h.id}.html`), bs = fs.existsSync(f) ? readBeats(fs.readFileSync(f, 'utf8'), h.id) : [];
+    for (const w of beatWarnings(h, bs)) console.warn(w);
+    return bs;
+  };
   shots = storyboardShots(scenes, beatsOf);
 }
 

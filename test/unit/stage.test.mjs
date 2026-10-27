@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import vm from 'node:vm';
 import { loadRuntime } from '../helpers/runtime.mjs';
 import { readBeats } from '../../harness/tools/lib/plan.mjs';
-import { stageShots, storyboardShots } from '../../harness/tools/lib/board-shots.mjs';
+import { stageShots, storyboardShots, beatWarnings } from '../../harness/tools/lib/board-shots.mjs';
 
 const RT = ['harness/runtime/mh.js', 'harness/runtime/mh-rig.js', 'harness/runtime/mh-cam.js', 'harness/runtime/mh-fx.js', 'harness/runtime/mh-stage.js'];
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -95,6 +96,26 @@ test('portrait stage uses composition size', () => {
   assert.ok(html.includes('data-width="1080" data-height="1920"'));
   assert.ok(html.includes('MH.stage2d(') && html.includes("window.__timelines[\"st1\"]") && html.includes('MH.rig.load("main")') && html.includes('buildReady["st1-actor"]'));
 });
+test('template runs: cues set synchronously, actor from file or fallback, no warnings for the pending actor', async () => {
+  for (const ok of [false, true, 'bad']) {
+    const warns = [], doc = makeDoc(), html = fill('st1', 12, 1080, 1920);
+    const root = doc.createElement('div'); root.setAttribute('id', 'st1'); const card = doc.createElement('div'); card.setAttribute('id', 'st1-card'); root.appendChild(card);
+    doc.createElement('script').setAttribute('id', 'st1-beats'); doc.byId['st1-beats'].textContent = /id="st1-beats">([^<]*)</.exec(html)[1];
+    let tl; const gsap = { timeline: () => (tl = { time: () => 0, to(d) { this.d = d; return this; } }) };
+    const fetch = async () => (ok === true ? { ok: true, status: 200, json: async () => ({ body: { shape: 'capsule', w: 300, h: 120 } }) } : ok === 'bad' ? { ok: true, status: 200, json: async () => ({ kind: 'parts', parts: [{ name: 'body' }] }) } : { ok: false, status: 404 });
+    const W = loadRuntime(RT, { document: doc, gsap, fetch, console: { warn: m => warns.push(m), log() {} } });
+    W.__timelines = {};
+    vm.runInContext([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n'), W);
+    assert.equal(W.__timelines.st1, tl); assert.equal(warns.length, 0);   // 배우 로드 전 첫 그리기에도 경고 없음
+    assert.equal(root.children.find(c => c.attrs.class !== 'mh-actors' && c !== card).style.transform, 'matrix(1.25,0,0,1.25,-135,-240)');   // 큐(카메라)는 로드 전에 이미 들어감
+    await W.__hf.buildReady['st1-actor'];
+    tl.d.t = 6;
+    const g = root.children.find(c => c.attrs.class === 'mh-actors').children[0];
+    assert.equal(g.attrs['data-actor'], 'main'); assert.match(g.children[0].attrs.transform, /^translate\(540 1160\)/);
+    assert.equal(card.style.visibility, 'visible');
+    assert.equal(warns.length, ok === true ? 0 : 1);   // 파일 없음·디자인 오류 → 기본 디자인 경고 1개
+  }
+});
 test('stage.md size', () => assert.ok(fs.statSync('harness/modules/stage.md').size <= 3072));
 
 // ── 추가: compile ──
@@ -128,13 +149,13 @@ test('stage builds world (cam depth-1 layer) and actor overlay above it', () => 
   assert.ok(st.cam.layers.some(l => l.el === world && l.depth === 1));
   assert.equal(st.W, 1000); assert.equal(st.H, 500);
 });
-test('depth sets get their own cam layer, ordered by depth below the actors', () => {
+test('depth layers: ascending by depth under the actors, depth 0 (HUD) on top (R15)', () => {
   const { MH: M, doc } = load(); const { root, st } = mkStage(M, doc);
-  const far = doc.createElement('div'), near1 = doc.createElement('div'), mid = doc.createElement('div'), far2 = doc.createElement('div');
-  st.set('far', far, { at: [0, 0], depth: 0.4 }).set('fg', near1, { at: [0, 0], depth: 1.5 }).set('mid', mid, { at: [10, 20] }).set('far2', far2, { depth: 0.4 });
-  assert.equal(mid.parentNode, st.world); assert.equal(far.parentNode, far2.parentNode);
-  const depths = root.children.slice(0, -1).map(el => st.cam.layers.find(l => l.el === el).depth);
-  assert.deepEqual(depths, [0.4, 1, 1.5]); assert.equal(root.children.at(-1).attrs.class, 'mh-actors');
+  const far = doc.createElement('div'), near1 = doc.createElement('div'), mid = doc.createElement('div'), far2 = doc.createElement('div'), hud = doc.createElement('div'), hud2 = doc.createElement('div');
+  st.set('hud', hud, { depth: 0 }).set('far', far, { at: [0, 0], depth: 0.4 }).set('fg', near1, { at: [0, 0], depth: 1.5 }).set('mid', mid, { at: [10, 20] }).set('far2', far2, { depth: 0.4 }).set('hud2', hud2, { depth: 0 });
+  assert.equal(mid.parentNode, st.world); assert.equal(far.parentNode, far2.parentNode); assert.equal(hud.parentNode, hud2.parentNode);
+  const order = root.children.map(el => (el.attrs.class === 'mh-actors' ? 'svg' : st.cam.layers.find(l => l.el === el).depth));
+  assert.deepEqual(order, [0.4, 1, 1.5, 'svg', 0]);
   assert.equal(mid.style.position, 'absolute'); assert.equal(mid.style.left, '10px'); assert.equal(mid.style.top, '20px');
 });
 test('set in/out: hidden before in, offset math, hidden after out', () => {
@@ -160,6 +181,21 @@ test('set in/out: hidden before in, offset math, hidden after out', () => {
   st.render(6);
   assert.equal(a.style.visibility, 'hidden'); assert.equal(a.style.opacity, '0');
 });
+test('set: out during in (and in during out) starts from the current state — no pop', () => {
+  const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
+  const a = doc.createElement('div'), b = doc.createElement('div');
+  st.set('a', a).set('b', b).cues([[1, 'set:a', 'in', { dur: 1 }], [1.4, 'set:a', 'out', { dur: 1, from: 'right' }], [0, 'set:b', 'out', { dur: 1 }], [0.5, 'set:b', 'in', { dur: 1 }]]);
+  const snap = (el, t) => { st.render(t); return [el.style.transform, +el.style.opacity]; };
+  const num = s => s[0].match(/-?[\d.]+/g).map(Number);
+  for (const [el, t] of [[a, 1.4], [b, 0.5]]) {
+    const pre = snap(el, t - 1e-4), at = snap(el, t), post = snap(el, t + 1 / 120);
+    num(pre).forEach((v, i) => near(v, num(at)[i], 0.05)); near(pre[1], at[1], 0.01);
+    num(at).forEach((v, i) => assert.ok(Math.abs(v - num(post)[i]) < 3, `${t}: ${at[0]} → ${post[0]}`)); assert.ok(Math.abs(at[1] - post[1]) < 0.05);
+  }
+  assert.ok(+snap(a, 1.4)[1] > 0.3);                  // in 이 40% 진행된 상태에서 out 시작 (0 으로 튀지 않음)
+  st.render(2.5); assert.equal(a.style.visibility, 'hidden');
+  st.render(3); assert.equal(b.style.transform, 'translate(0px, 0px) scale(1)'); assert.equal(b.style.opacity, '1');
+});
 test('set without cues or starting with out is visible from the start', () => {
   const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
   const a = doc.createElement('div'), b = doc.createElement('div');
@@ -179,7 +215,8 @@ test('cam cues drive the world layer', () => {
 });
 
 const DESIGN = { body: { shape: 'blob', w: 100, h: 80 } };
-test('actor wrapper: anchor 0 = cam matrix, 1 = identity, midway = element-wise lerp', () => {
+const centreOf = (m, p) => [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
+test('actor wrapper: anchor 0 = cam matrix, 1 = identity, midway = position blend (R16)', () => {
   const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
   st.actor('boo', DESIGN, { life: false }).cues([[0, 'cam', { x: 300, y: 200, zoom: 2, rot: 10 }], [1, 'boo', 'grow', { dur: 1 }]]);
   const g = st.actorTarget('boo'), A = st.actors.boo;
@@ -190,9 +227,31 @@ test('actor wrapper: anchor 0 = cam matrix, 1 = identity, midway = element-wise 
   st.render(3);
   assert.deepEqual(matOf(g.attrs.transform), [1, 0, 0, 1, 0, 0]);
   st.render(1.5);
-  const a = A.pose(1.5).anchor, m = st.cam.matrix(1.5, 1), I = [1, 0, 0, 1, 0, 0];
+  const P = A.pose(1.5), a = P.anchor, m = st.cam.matrix(1.5, 1), I = [1, 0, 0, 1, 0, 0], w = matOf(g.attrs.transform);
   assert.ok(a > 0.05 && a < 0.95, String(a));
-  matOf(g.attrs.transform).forEach((v, i) => near(v, m[i] + (I[i] - m[i]) * a));
+  for (let i = 0; i < 4; i++) near(w[i], m[i] + (I[i] - m[i]) * a);                       // 선형부 = lerp(카메라, I, a)
+  const p0 = A.pose(1), pe = A.pose(1 + 1 + 0.35), from = centreOf(m, [p0.x, p0.y]), c = centreOf(w, [P.x, P.y]);   // 출발: 전환 시작 자세(월드), 도착: 안착 끝 자세(화면)
+  near(c[0], from[0] + (pe.x - from[0]) * a, 1e-3); near(c[1], from[1] + (pe.y - from[1]) * a, 1e-3);
+});
+test('grow under an offset zoomed camera heads straight to the screen centre (R16)', () => {
+  const { MH: M, doc } = load(); const { st } = mkStage(M, doc);   // 1000×500
+  st.actor('boo', DESIGN, { life: false, x: 2930, y: 270 }).cues([[0, 'cam', { x: 2900, y: 250, zoom: 3 }], [1, 'boo', 'grow', { dur: 0.8 }]]);
+  const g = st.actorTarget('boo'), A = st.actors.boo, path = [];
+  for (let i = 0; i <= 360; i++) { const t = i / 120; st.render(t); const p = A.pose(t); path.push(centreOf(matOf(g.attrs.transform), [p.x, p.y])); }
+  near(path[0][0], 500 + 30 * 3, 1e-3); near(path[0][1], 250 + 20 * 3, 1e-3);   // 처음엔 월드 점 그대로
+  const d = path.map(([x, y]) => Math.hypot(x - 500, y - 250));
+  for (const [x, y] of path) assert.ok(x >= 0 && x <= 1000 && y >= 0 && y <= 500, `${x},${y}`);
+  for (let i = 1; i < d.length; i++) assert.ok(d[i] <= d[i - 1] + 2, `detour at ${i / 120}s: ${d[i - 1]} → ${d[i]}`);
+  near(path.at(-1)[0], 500, 1e-6); near(path.at(-1)[1], 250, 1e-6);
+  assert.deepEqual(matOf(g.attrs.transform), [1, 0, 0, 1, 0, 0]);
+});
+test('anchor back to world: from the frozen screen point to the live world point', () => {
+  const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
+  st.actor('boo', DESIGN, { life: false, x: 500, y: 250 }).cues([[0, 'cam', { x: 800, y: 250, zoom: 2 }], [0, 'boo', 'grow', { dur: 0.5 }], [2, 'boo', 'anchor', { to: 'world', dur: 0.4 }]]);
+  const g = st.actorTarget('boo'), A = st.actors.boo, cen = t => { st.render(t); const p = A.pose(t); return centreOf(matOf(g.attrs.transform), [p.x, p.y]); };
+  near(cen(1.9)[0], 500, 1e-6); near(cen(2)[0], 500, 1e-6);
+  const end = cen(3), m = st.cam.matrix(3, 1); assert.deepEqual(matOf(g.attrs.transform).map(v => +v.toFixed(4)), Array.from(m, v => +v.toFixed(4)));
+  near(end[0], 500 + (500 - 800) * 2, 1e-3);   // 자세 위치(화면 중앙 숫자)가 월드 점으로 읽힌다
 });
 test('actor two-step: scene creates rig on stage.actorTarget; screen anchor ignores camera', () => {
   const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
@@ -203,11 +262,16 @@ test('actor two-step: scene creates rig on stage.actorTarget; screen anchor igno
   st.render(1); assert.deepEqual(matOf(g.attrs.transform), [1, 0, 0, 1, 0, 0]);
   st.render(5); assert.equal(A.pose(5).x, 100);   // 큐가 배우 동작으로 전달됨
 });
-test('unknown actor in cues warns once', () => {
-  const warns = []; const { MH: M, doc } = load({ console: { warn: m => warns.push(m), log() {} } }); const { st } = mkStage(M, doc);
+test('unknown actor warns once per stage at render; late or reserved actors do not warn', () => {
+  const warns = []; const { MH: M, doc } = load({ console: { warn: m => warns.push(m), log() {} } });
+  const { st } = mkStage(M, doc), st2 = mkStage(M, doc).st, st3 = mkStage(M, doc).st;
   st.cues([[0, 'ghost', 'blink'], [1, 'ghost', 'hop']]).cues([[2, 'ghost', 'nod']]);
-  assert.equal(warns.filter(w => w.includes('ghost')).length, 1);
-  st.render(1);
+  assert.equal(warns.length, 0);                                   // cues 시점엔 경고 없음 (나중 등록 허용)
+  st.render(0); st.render(1); assert.equal(warns.filter(w => w.includes('ghost')).length, 1);
+  st2.cues([[0, 'ghost', 'blink']]).render(0); assert.equal(warns.filter(w => w.includes('ghost')).length, 2);   // 무대마다 따로
+  st3.cues([[0, 'late', 'hop', { to: [10, 0] }]]); st3.actorTarget('late'); st3.render(0);
+  st3.actor('late', DESIGN, { life: false }); st3.render(5);
+  assert.equal(warns.filter(w => w.includes('late')).length, 0); assert.equal(st3.actors.late.pose(5).x, 10);
 });
 test('remap applies to cam, sets and actors', () => {
   const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
@@ -258,6 +322,17 @@ test('stageShots: one cell per beat at 60% of the beat', () => {
   assert.deepEqual(s.map(x => x.t), [12.4, 17]);
   assert.deepEqual(s.map(x => x.label), ['#3 st1·b1 목록', '#4 st1·b2']);
   assert.equal(s[0].sub, '할 일'); assert.equal(s[0].id, 'st1');
+});
+test('stageShots clamps beats to the stage and beatWarnings flags overruns', () => {
+  const host = { id: 'st1', start: 10, dur: 12 };
+  const beats = [{ id: 'b1', t0: 8, t1: 20, title: '', note: '' }, { id: 'b2', t0: 14, t1: 16, title: '', note: '' }, { id: 'b3', t0: -2, t1: 2, title: '', note: '' }];
+  const s = stageShots(host, beats);
+  assert.deepEqual(s.map(x => x.beat), ['b3', 'b1', 'b2']);
+  assert.deepEqual(s.map(x => x.t), [11.2, 20.4, 21.967]);   // [0,2]→1.2 / [8,12]→10.4 / [12,12] → 끝 직전(1/30초)
+  assert.ok(s.every(x => x.t >= 10 && x.t < 22));
+  const w = beatWarnings(host, beats);
+  assert.equal(w.length, 2); assert.ok(w[0].includes('b1') && w[1].includes('b2') && w[0].includes('12'));
+  assert.deepEqual(beatWarnings(host, [{ id: 'b1', t0: 0, t1: 12 }]), []);
 });
 test('storyboardShots numbers stage beats and plain scenes together', () => {
   const scenes = [
