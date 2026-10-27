@@ -9,13 +9,14 @@ import { parseEffectTable, parseBriefEffects } from './lib/plan.mjs';
 
 const read = f => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
 const inside = (base, p) => p.startsWith(base + path.sep);
+const squash = s => s.toLowerCase().replace(/\s+/g, '');                     // ③ 비교: 대소문자·띄어쓰기 무시 ('모션블러' = '모션 블러')
 const rel = (proj, f) => path.relative(proj, f).split(path.sep).join('/');
 
 export function runGate(projDir) {
   const proj = path.resolve(projDir), work = path.join(proj, 'work');
   const catalog = loadCatalog(), byId = new Map(catalog.map(e => [e.id, e]));
   const rows = parseEffectTable(read(path.join(work, 'PLAN.md')));
-  const brief = parseBriefEffects(read(path.join(proj, 'brief.md'))).join('\n').toLowerCase();
+  const brief = squash(parseBriefEffects(read(path.join(proj, 'brief.md'))).join('\n'));
   const violations = [], warnings = [];
 
   // 행 하나의 근거 검사 → 위반 사유 또는 null
@@ -23,7 +24,7 @@ export function runGate(projDir) {
     const ev = row.evidence;
     if (row.tier == null || ev.invalid) return 'bad-evidence';
     if (ev.user) {
-      const keys = [row.id, ...(byId.get(row.id).ko || [])].filter(Boolean).map(k => k.toLowerCase());   // 빈 문구는 모든 brief 와 일치하므로 제외
+      const keys = [row.id, ...(byId.get(row.id).ko || [])].map(squash).filter(Boolean);   // 빈 문구는 모든 brief 와 일치하므로 제외
       return keys.some(k => brief.includes(k)) ? null : 'user-not-in-brief';
     }
     const base = path.resolve(work, 'ref-' + ev.ref), img = path.resolve(base, ev.img);

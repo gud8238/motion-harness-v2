@@ -254,3 +254,12 @@ test('rig grow cue needs trans.fill evidence (R24)', () => {
   const stage = 'st.cues([[4.6, "boo", "grow", { dur: 0.8 }]]);';
   assert.deepEqual(runGate(camProject(stage, null)).violations.map(v => [v.id, v.reason]), [['trans.fill', 'no-row']]);
 });
+test('③ brief match ignores spaces on both sides (모션블러 = 모션 블러)', () => {
+  const d = camProject('', '| lens.mblur | ③ | 사용자 지정 | s1 |');
+  fs.writeFileSync(path.join(d, 'brief.md'), '## 효과 지정\n- 모션블러\n');
+  assert.equal(runGate(d).ok, true, JSON.stringify(runGate(d).violations));
+  fs.writeFileSync(path.join(d, 'brief.md'), '## 효과 지정\n- 화면 흔 들림 정도\n');
+  assert.equal(runGate(d).violations[0].reason, 'user-not-in-brief');
+  fs.writeFileSync(path.join(d, 'brief.md'), '## 효과 지정\n- 모션 블 러\n');
+  assert.equal(runGate(d).ok, true);
+});

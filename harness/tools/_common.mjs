@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 export const HARNESS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');   // <플러그인>/harness
 export const PLUGIN = path.resolve(HARNESS, '..');
 // 설치물(node_modules, 라이브러리, 폰트)은 플러그인 업데이트에도 남도록 사용자 홈에 둔다
-export const DATA = process.env.MH_DATA || path.join(os.homedir(), '.motion-harness2');
+export const DATA = process.env.MH2_DATA || process.env.MH_DATA || path.join(os.homedir(), '.motion-harness2');   // MH2_DATA 가 먼저 — v1 용 MH_DATA 와 나눌 수 있게
 export const LIB = path.join(DATA, 'library');
 export const ROOT = process.cwd();                                                          // Claude Code 로 연 폴더 (보통 이 폴더 자체가 프로젝트)
 export const CONFIG = JSON.parse(fs.readFileSync(path.join(HARNESS, 'config.json'), 'utf8'));
@@ -161,11 +161,12 @@ export function hosts(html) {
   }
   return out;
 }
+// Windows 는 셸(cmd.exe)을 거치므로 공백·특수문자가 든 인자를 따옴표로 감싼다 (hf·setup 공용)
+export const winQuote = (a, win = process.platform === 'win32') => (win && /[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
 // HyperFrames CLI (버전 고정): hf(['render', dir, ...])
 export function hf(args, o = {}) {
   const win = process.platform === 'win32';
-  const q = a => (win && /[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);   // Windows 는 셸을 거치므로 공백·한글 경로를 따옴표로
-  const full = ['--yes', `hyperframes@${CONFIG.hyperframes}`, ...args].map(q);
+  const full = ['--yes', `hyperframes@${CONFIG.hyperframes}`, ...args].map(a => winQuote(a, win));
   const r = spawnSync(win ? 'npx.cmd' : 'npx', full, { encoding: 'utf8', maxBuffer: 1 << 28, cwd: o.cwd, stdio: o.inherit ? 'inherit' : 'pipe', shell: win });
   if (r.error) throw r.error;
   return r;

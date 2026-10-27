@@ -20,7 +20,7 @@ const total = Math.max(...scenes.map(h => h.start + h.dur));
 const r3 = n => Math.round(n * 1000) / 1000;
 
 let shots, tag;
-if (opt.times) { tag = 'stills'; shots = String(opt.times).split(',').map(Number).map(t => ({ t, label: `${t.toFixed(2)}s` })); }
+if (opt.times) { tag = 'stills'; shots = String(opt.times).split(',').map(Number).filter(Number.isFinite).sort((a, b) => a - b).map(t => ({ t, label: `${t.toFixed(2)}s` })); }
 else if (opt.strip) {
   const s = scenes.find(x => x.id === opt.strip); if (!s) die('장면 없음: ' + opt.strip);
   const n = +(opt.n || 8); tag = `strip_${s.id}`;

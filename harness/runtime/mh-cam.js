@@ -88,7 +88,7 @@ function cam(worldEl, o = {}) {
     // key(t, {x?,y?,zoom?,rot?}, {dur=0, ease='dna'}) — 준 속성만 t 에서 dur 동안 (그 시각의 값 → 새 값). dur 0 = 컷. ease: 'dna' | MH.E 키 | 함수 (모르는 문자열은 오류)
     //   follow:'zoom' — x,y 를 줌 진행에 맞춰 움직인다(zoomThrough 가 사용)
     key(t, props = {}, { dur = 0, ease = 'dna', follow = null } = {}) {
-      const p = {}; for (const n of PROPS) if (props[n] != null) p[n] = props[n];
+      const p = {}; for (const n of PROPS) if (props[n] != null) { if (!Number.isFinite(+props[n])) throw new Error(`cam.key: ${n} 값이 숫자가 아닙니다 (${props[n]}) — NaN 이면 레이어가 사라집니다.`); p[n] = +props[n]; }
       if (p.zoom != null) p.zoom = Math.max(1e-3, p.zoom);
       keys.push({ t, props: p, dur: Math.max(0, dur), ease: checkEase(ease), follow }); tracks = null; return self;
     },

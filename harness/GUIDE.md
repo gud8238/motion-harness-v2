@@ -10,7 +10,7 @@
 - 안 함: 구조안 여러 개, 모델시트, 수정 2회 이상, 저해상도 미리보기, compare·움직임 strip `motion_N.png`(요청·의심 시만), HyperFrames 스킬 자체 절차(스토리라인 3개·SPEC·REVIEW). 질문은 처음 **한 번**(AskUserQuestion, 추천안 먼저), 브리프로 답이 되면 생략.
 
 ## 2. 순서
-1. **입력**: `brief.md`, `ref/`, 소스는 `assets.mjs sheet P` → `work/sources.png`(크기·배경). 링크·ID 는 `refs.mjs fetch P <ID|링크>`. 레퍼런스가 없거나 "추천" → `/mv-refs`.
+1. **입력**: `brief.md`, `ref/`, 소스는 `assets.mjs sheet P` → `work/sources.png`(크기·배경). 링크·ID 는 `refs.mjs fetch P <ID|링크>`. 레퍼런스 없음·"추천" → `/motion-harness2:mv-refs`.
 2. **측정**: `analyze-ref.mjs P ref/<파일>` → `work/ref-<이름>/` 의 `analysis.md`·`card.png`(DNA 근거), `evidence.json`·`evidence.png`(효과 후보 8개씩, `evidence_2.png`…).
 2.2 **근거표 확정**: evidence.png(쪽마다) 후보를 확정·기각(신호가 보이고 쓸 것인가). 확정분은 analysis.md `→ 근거 칸:` 문구(`<이름> <t0>–<t1>s (ev_<id>_<t0>.png)`)를 효과 표에. 놓친 효과는 `analyze-ref.mjs strip P ref/<파일> <t0> <t1>` → `ev_mNN.png`·근거 칸. **근거 이미지 없는 ② 금지** — 이미지 레퍼런스는 ② 근거가 없어 ③(brief 효과 지정)만.
 2.5 **소스 점검**(2.5절) — 부족하면 ASSETS.md → **⏸** AskUserQuestion `이미지 추가 완료` / `일부만 넣고 진행` / `이미지 없이 진행(코드로 대체)` → `assets.mjs check P` + `new.mjs P`, 새 이미지만 확인. 부족한 게 없으면 "추가 이미지 불필요" 한 줄. "바로 만들어"면 목록만 보이고 계속.

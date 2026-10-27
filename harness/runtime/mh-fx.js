@@ -46,7 +46,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const timecodeOf = t => { const s = Math.floor(Math.max(0, t)); return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor(s / 60) % 60)}:${pad2(s % 60)}`; };
 
 const BAND_H = 10, STEP = 12, STRIPS = 4, TOP = 15;   // 띠 높이(화면 %), 1/12초 단계, 줄무늬 조각 수, 밝은 윗줄(띠 높이 %)
-// 줄무늬: 분석 폭 160 기준 칸(u) 단위의 불규칙한 흰 조각 [불투명도, 칸 수] — 축소해도 남는 굵기. 조각마다 단계별로 ±6u 안에서 이웃과 2u↑ 다르게 어긋나 행 사이 가로 어긋남을 만든다
+// 줄무늬: 분석 폭 160 기준 칸(u) 단위의 불규칙한 흰 조각 [불투명도, 칸 수] — 축소해도 남는 굵기. 조각마다 단계별로 ±4u 안에서 이웃과 2u↑ 다르게 어긋나 행 사이 가로 어긋남을 만든다
 const STREAK = [[.85, 2], [0, 3], [.5, 1], [0, 4], [.85, 1], [0, 2]];
 const streakCss = u => { let x = 0; const st = []; for (const [a, n] of STREAK) { const c = a ? `rgba(255,255,255,${a})` : 'rgba(255,255,255,0)'; st.push(`${c} ${r2(x)}px`, `${c} ${r2(x + n * u)}px`); x += n * u; } return `repeating-linear-gradient(90deg,${st.join(',')})`; };
 const DARK = '0 0 6px rgba(0,0,0,.85)';                         // 밝은 배경에서도 읽히도록 깔아 두는 어두운 그림자

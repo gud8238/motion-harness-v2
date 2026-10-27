@@ -3,11 +3,11 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { DATA, LIB, HARNESS, CONFIG, parseArgs, has, ensureDir, hf } from './_common.mjs';
+import { DATA, LIB, HARNESS, CONFIG, parseArgs, has, ensureDir, hf, winQuote } from './_common.mjs';
 
 const { opt } = parseArgs();
 const WIN = process.platform === 'win32', MAC = process.platform === 'darwin';
-const sh = (cmd, args, cwd = DATA) => spawnSync(cmd, args, { stdio: 'inherit', shell: WIN, cwd });
+const sh = (cmd, args, cwd = DATA) => spawnSync(cmd, args.map(a => winQuote(a, WIN)), { stdio: 'inherit', shell: WIN, cwd });   // 사용자 폴더에 공백이 있어도
 const ok = m => console.log('  ✔ ' + m), warn = m => console.log('  ⚠ ' + m);
 let problems = 0;
 ensureDir(DATA);

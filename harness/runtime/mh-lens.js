@@ -20,8 +20,8 @@ const fmt = v => +v.toFixed(2);
 const blurFor = (depth, focus, aperture) => Math.min(MAXBLUR, Math.abs(depth - focus) * aperture);
 
 function dof(cam, { focus = 1, aperture = 6 } = {}) {
-  let keys = null;
-  const bases = new WeakMap();                                       // 레이어 el → 처음 render 때 본 원래 인라인 filter                                                   // [[t, focus, E.linear], …] 정렬·중복 t 제거
+  let keys = null;                                                   // [[t, focus, E.linear], …] 정렬·중복 t 제거
+  const bases = new WeakMap();                                       // 레이어 el → 처음 render 때 본 원래 인라인 filter
   const focusAt = t => (keys ? MH.kf(t, keys) : focus);
   const self = {
     rack(list) {

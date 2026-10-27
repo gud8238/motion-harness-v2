@@ -176,7 +176,7 @@ test('vhs: 크기가 없는 el 은 MH.screenSize() 로 대신한다 (#root 1080x
   const W = loadRuntime(RT, { document: doc }); W.MH.fx.vhs(el, {});
   assert.equal(el.children[0].children[2].style.fontSize, '49px');
 });
-test('vhs: 트래킹 띠는 화면 폭 전체, 줄무늬 조각은 최대 어긋남(6u)보다 넓게(8u) 양쪽으로 넘쳐 가장자리 틈이 없다', () => {
+test('vhs: 트래킹 띠는 화면 폭 전체, 줄무늬 조각은 최대 어긋남(4u)보다 넓게(8u) 양쪽으로 넘쳐 가장자리 틈이 없다', () => {
   const { band } = parts(build({}, { clientWidth: 1600 }).root);
   assert.equal(band.style.left, '0'); assert.equal(band.style.right, '0');
   for (const st of band.children) { assert.equal(st.style.left, '-80px'); assert.equal(st.style.right, '-80px'); }   // u = 1600/160 = 10px

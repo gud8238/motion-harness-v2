@@ -216,3 +216,10 @@ test('camera layers (depth ≠ 0) are marked data-layout-allow-overflow; HUD (de
   assert.equal(world.at['data-layout-allow-overflow'], ''); assert.equal(far.at['data-layout-allow-overflow'], '');
   assert.ok(!('data-layout-allow-overflow' in hud.at));
 });
+test('key with NaN / non-numeric zoom or position throws a Korean error instead of hiding the layer', () => {
+  const c = MH.cam(null, { W: 100, H: 100 });
+  assert.throws(() => c.key(0, { zoom: NaN }), /zoom 값이 숫자가 아닙니다/);
+  assert.throws(() => c.key(0, { x: 0 / 0 }), /x 값이 숫자가 아닙니다/);
+  assert.throws(() => c.key(0, { rot: 'abc' }), /rot/);
+  assert.doesNotThrow(() => c.key(0, { zoom: 0, x: 1 }));
+});

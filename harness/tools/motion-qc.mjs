@@ -19,7 +19,7 @@ const EPS = 1e-6;
 const catalogById = catalog => new Map((catalog || loadCatalog()).map(e => [e.id, e]));
 const overlap = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0);
 
-// 효과 행마다 { id, where, ok }: 같은 id 후보가 행의 구간 중 하나와 0.5초 이상 겹치면 true(구간이나 후보가 0.5초보다 짧으면 짧은 쪽이 완전히 겹칠 때), 없으면 false.
+// 효과 행마다 { id, where, ok, at? }: 같은 id 후보가 행의 구간 중 하나와 0.5초 이상 겹치면 true(구간이나 후보가 0.5초보다 짧으면 짧은 쪽이 완전히 겹칠 때, 그래도 최소 MIN_TOUCH), 없으면 false.
 // 감지기가 없는 효과(detect null)·카탈로그에 없는 id·해석된 구간이 없는 행은 null (눈 확인).
 // 맞닿거나 겹치는 구간 합치기 ('st1 b5, s2' = 12.2–14.5 + 14.5–21 → 12.2–21)
 const mergeTouching = rs => {
