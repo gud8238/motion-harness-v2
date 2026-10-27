@@ -1,29 +1,55 @@
 // 레퍼런스 측정: 영상(또는 이미지)을 숫자와 시트로 바꾼다 → 스타일 DNA의 근거
 // node harness/tools/analyze-ref.mjs 모션1 ref/참고.mp4 [--thr 0.3]
 // node harness/tools/analyze-ref.mjs 모션1 ref/            (ref 폴더의 영상·이미지 전부)
-// 결과: work/ref-<이름>/ analysis.md, analysis.json, sheet.jpg(1초 간격), shots.png(샷별 대표), motion_N.png(움직임 연속 프레임), palette
+// node harness/tools/analyze-ref.mjs strip 모션1 ref/참고.mp4 4.6 5.4   (놓친 효과의 근거 strip → work/ref-참고/ev_m01.png)
+// 결과: work/ref-<이름>/ analysis.md, analysis.json, sheet.jpg(1초 간격), shots.png(샷별 대표), motion_N.png(움직임 연속 프레임), palette,
+//       evidence.json·evidence.png(효과 근거 후보) + ev_NN.png(후보별 strip)
 import fs from 'fs';
 import path from 'path';
-import { projectDir, parseArgs, die, ensureDir, ffmpeg, probe, rawFrames, palette, board, chromium, writeJSON, ROOT } from './_common.mjs';
+import { projectDir, parseArgs, die, ensureDir, ffmpeg, probe, rawFrames, palette, board, chromium, writeJSON, fwd, ROOT } from './_common.mjs';
+import { measureSeries, buildCandidates, estimateStrength, seriesSize, stripImage, evidenceBoard, evLabel, NO_CANDIDATES } from './lib/evidence.mjs';
 
 const { pos, opt } = parseArgs();
-const proj = projectDir(pos[0]);
-const target = path.resolve(proj, pos[1] || 'ref');
+const STRIP = pos[0] === 'strip', args = STRIP ? pos.slice(1) : pos;
+const proj = projectDir(args[0]);
+const target = path.resolve(proj, args[1] || 'ref');
 if (!fs.existsSync(target)) die('대상이 없습니다: ' + target);
 const VID = /\.(mp4|mov|webm|mkv|m4v|gif|avi)$/i, IMGX = /\.(png|jpe?g|webp|bmp)$/i;
-let files = fs.statSync(target).isDirectory() ? fs.readdirSync(target).map(f => path.join(target, f)) : [target];
-const videos = files.filter(f => VID.test(f)), images = files.filter(f => IMGX.test(f));
-if (!videos.length && !images.length) die('분석할 영상/이미지가 없습니다 (텍스트 프롬프트는 Claude가 직접 읽습니다).');
-const browser = await chromium();
 const spark = arr => { const s = '▁▂▃▄▅▆▇█', mx = Math.max(...arr, 1e-9); return arr.map(v => s[Math.min(7, Math.floor(v / mx * 7.999))]).join(''); };
 const fmt = s => s.toFixed(2);
+const refBase = file => path.parse(file).name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
+let browser;
 
-for (const f of videos) await analyzeVideo(f);
-if (images.length) await analyzeImages(images, fs.statSync(target).isDirectory() ? 'images' : path.parse(target).name);
-await browser.close();
+if (STRIP) await stripCommand(target, args[2], args[3]);
+else {
+  const files = fs.statSync(target).isDirectory() ? fs.readdirSync(target).map(f => path.join(target, f)) : [target];
+  const videos = files.filter(f => VID.test(f)), images = files.filter(f => IMGX.test(f));
+  if (!videos.length && !images.length) die('분석할 영상/이미지가 없습니다 (텍스트 프롬프트는 Claude가 직접 읽습니다).');
+  browser = await chromium();
+  for (const f of videos) await analyzeVideo(f);
+  if (images.length) await analyzeImages(images, fs.statSync(target).isDirectory() ? 'images' : path.parse(target).name);
+  await browser.close();
+}
+
+// strip: 자동 감지가 놓친 효과의 근거 이미지(구간 6장) → work/ref-<이름>/ev_mNN.png (다음 빈 번호)
+async function stripCommand(file, a0, a1) {
+  const usage = '사용법: node harness/tools/analyze-ref.mjs strip <프로젝트> ref/<영상> <시작초> <끝초>';
+  if (!fs.statSync(file).isFile() || !VID.test(file)) die('strip 은 영상 파일 하나를 받습니다: ' + file + '\n' + usage);
+  const t0 = parseFloat(a0), t1 = parseFloat(a1), P = probe(file);
+  if (!P.duration) die('길이를 읽을 수 없습니다: ' + file);
+  if (!(t0 >= 0) || !(t1 > t0) || t0 >= P.duration) die(`구간이 올바르지 않습니다 (0 ≤ 시작 < 끝, 시작 < 영상 길이 ${fmt(P.duration)}s): ${a0} ${a1}\n` + usage);
+  const base = refBase(file), out = ensureDir(path.join(proj, 'work', `ref-${base}`));
+  const used = fs.readdirSync(out).map(f => /^ev_m(\d+)\.png$/.exec(f)).filter(Boolean).map(m => +m[1]);
+  const name = `ev_m${String((used.length ? Math.max(...used) : 0) + 1).padStart(2, '0')}.png`, e1 = Math.min(t1, P.duration);
+  const br = await chromium();
+  try { await stripImage(file, P, t0, e1, path.join(out, name), { browser: br, title: `${name.replace(/\.png$/, '')} · ${fmt(t0)}–${fmt(e1)}s · 수동 근거 (${path.basename(file)})` }); }
+  finally { await br.close(); }
+  console.log(fwd(path.relative(proj, path.join(out, name))));
+  console.log(`  효과 표 근거 칸: ${base} ${fmt(t0)}–${fmt(e1)}s (${name})`);
+}
 
 async function analyzeVideo(file) {
-  const base = path.parse(file).name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
+  const base = refBase(file);
   const out = ensureDir(path.join(proj, 'work', `ref-${base}`));
   const P = probe(file);
   if (!P.duration) die('길이를 읽을 수 없습니다: ' + file);
@@ -129,17 +155,31 @@ async function analyzeVideo(file) {
   for (const it of [...(texture._crops || []), ...firstStrip]) fs.rmSync(it.img, { force: true });
   delete texture._crops;
 
+  // 8) 효과 근거표: 감지기 시계열 → 후보 → 후보별 strip(ev_NN.png) + evidence.png 한 장. 감지기가 실패하면 그 신호만 비운다
+  const evFailed = [], [sw, sh] = seriesSize(P);
+  let cands = [];
+  try { cands = buildCandidates(measureSeries(file, P, { cuts, accents: accents.map(a => a.hex), failed: evFailed }), cuts, P.duration, sw, sh, { failed: evFailed }); }
+  catch { evFailed.push('measureSeries'); }
+  for (const f of fs.readdirSync(out)) if (/^ev_\d+\.png$/.test(f)) fs.rmSync(path.join(out, f));   // 이전 실행의 자동 strip (수동 ev_mNN 은 유지)
+  cands = cands.map((c, k) => ({ ...c, strip: `ev_${String(k + 1).padStart(2, '0')}.png` }));
+  for (const c of cands) await stripImage(file, P, c.t0, c.t1, path.join(out, c.strip), { browser, title: evLabel(c.strip, c) });
+  writeJSON(path.join(out, 'evidence.json'), { ref: fwd(path.relative(proj, file)), candidates: cands });
+  await evidenceBoard(cands, out, path.join(out, 'evidence.png'), { browser, title: `${path.basename(file)} — 효과 근거 후보 ${cands.length}개` });
+  const strength = estimateStrength(energy, MF, peaks.map(p => p.t), holds);
+
   const A = {
     file: path.relative(proj, file), duration: +fmt(P.duration), size: `${P.width}x${P.height}`, aspect: +(P.width / P.height).toFixed(3), fps: P.fps,
     cuts: { count: cuts.length, times: cuts.map(c => +fmt(c)), meanShot: +fmt(mean), medianShot: +fmt(median), shortest: durs[0], longest: durs[durs.length - 1], threshold: thr },
     shots, motion: { perSecond: perSec.map(v => +v.toFixed(4)), spark: spark(perSec), movingPct: Math.round(moving * 100), holds, peaks: peaks.map(p => +fmt(p.t)) },
     color: { palette: pal, accents: accents.map(a => a.hex), meanLuma: Math.round(lum), meanSat: +sat.toFixed(2), ground: lum > 150 ? '밝은 바탕' : lum < 70 ? '어두운 바탕' : '중간 밝기' },
-    texture, audio, images: { card: 'card.png', sheet: 'sheet.jpg', shots: 'shots.png', motion: strips, texture: 'texture.png' },
+    motionStrength: strength,
+    texture, audio, images: { card: 'card.png', sheet: 'sheet.jpg', shots: 'shots.png', motion: strips, texture: 'texture.png', evidence: 'evidence.png' },
   };
   writeJSON(path.join(out, 'analysis.json'), A);
   const md = `# 레퍼런스 측정: ${path.basename(file)}
 
 > DNA의 근거. **\`card.png\` 한 장을 직접 보고** DNA를 쓴다 (팔레트·대표 프레임·질감 확대·움직임). 더 필요할 때만: \`sheet.jpg\`(1초 간격 전체), \`shots.png\`, \`texture.png\`, ${strips.map(s => `\`${s}\``).join(', ') || '(움직임 스트립 없음)'}
+> 효과 근거 후보: **\`evidence.png\`** 를 보고 확정·기각 (\`evidence.json\`). 놓친 효과는 \`node harness/tools/analyze-ref.mjs strip <프로젝트> "${fwd(path.relative(proj, file))}" <시작초> <끝초>\`
 
 | 항목 | 측정값 |
 |---|---|
@@ -149,6 +189,7 @@ async function analyzeVideo(file) {
 | 초당 움직임 | \`${spark(perSec)}\` (움직이는 프레임 ${Math.round(moving * 100)}%) |
 | 정지(홀드) 구간 | ${holds.map(h => h.join('–') + 's').join(', ') || '없음 (계속 움직임)'} |
 | 움직임 피크 | ${peaks.map(p => fmt(p.t) + 's').join(', ') || '-'} |
+| ① 기본기 강도(추정) | 동작 ${fmt(strength.dur)}s · 오버슈트 ${fmt(strength.over)} · 정지 ${fmt(strength.hold)}s |
 | 바탕 | ${A.color.ground} (평균 밝기 ${Math.round(lum)}/255, 채도 ${sat.toFixed(2)}) |
 | 팔레트 | ${pal.map(c => `${c.hex} ${c.pct}%`).join(' · ')} |
 | 강조색 | ${accents.map(a => a.hex).join(' ') || '뚜렷한 강조색 없음'} |
@@ -163,9 +204,12 @@ ${audio ? `| 템포 추정 | ${audio.bpm} BPM (후보 ${audio.bpmCandidates.join
 
 ## ${oneTake ? '구간 목록 (컷이 거의 없음 → 원테이크·카메라 이동·장면 내 변형형. shots.png 는 균등 12구간)' : '샷 목록'}
 ${shots.slice(0, 60).map(s => `- ${oneTake ? '구간' : '샷'} ${s.i}: ${s.start}–${s.end}s (${s.dur}s)`).join('\n')}${shots.length > 60 ? `\n- … 외 ${shots.length - 60}개` : ''}
+
+## 효과 근거 후보 (evidence.png)
+${cands.map(c => `- ${evLabel(c.strip, c)} (score ${c.score})`).join('\n') || `- ${NO_CANDIDATES}`}${evFailed.map(n => `\n- 감지 실패: ${n}`).join('')}
 `;
   fs.writeFileSync(path.join(out, 'analysis.md'), md);
-  console.log(`✔ ${path.relative(ROOT, out)}/analysis.md  · 컷 ${cuts.length} · 평균 샷 ${fmt(mean)}s · 팔레트 ${pal.slice(0, 5).map(c => c.hex).join(' ')}${audio ? ` · ${audio.bpm}BPM` : ''}`);
+  console.log(`✔ ${path.relative(ROOT, out)}/analysis.md  · 컷 ${cuts.length} · 평균 샷 ${fmt(mean)}s · 팔레트 ${pal.slice(0, 5).map(c => c.hex).join(' ')}${audio ? ` · ${audio.bpm}BPM` : ''} · 근거 후보 ${cands.length}${evFailed.length ? ` · 감지 실패 ${evFailed.join(', ')}` : ''}`);
 }
 
 async function analyzeImages(list, label) {
@@ -217,11 +261,12 @@ async function measureTexture(file, P, cuts, out) {
   if (best) {
     const picks = []; for (const b of best.flat) { if (picks.length >= 3) break; if (picks.every(p => Math.hypot(p.bx - b.bx, p.by - b.by) > 300)) picks.push(b); }
     for (const [k, b] of picks.entries()) {
-      const cx = Math.min(W - 256, Math.max(0, b.bx + B / 2 - 128)), cy = Math.min(H - 256, Math.max(0, b.by + B / 2 - 128));
+      const cs = Math.min(256, W, H), zs = Math.round(cs * 3 / 8);   // 작은 영상(<256px)에서도 화면 안에서 자른다
+      const cx = Math.min(W - cs, Math.max(0, b.bx + B / 2 - cs / 2)), cy = Math.min(H - cs, Math.max(0, b.by + B / 2 - cs / 2)), zo = Math.round((cs - zs) / 2);
       const f1 = path.join(out, `tx_${k}a.png`), f2 = path.join(out, `tx_${k}b.png`);
-      ffmpeg(['-ss', best.t.toFixed(3), '-i', file, '-frames:v', '1', '-vf', `crop=256:256:${cx}:${cy}`, f1]);
-      ffmpeg(['-ss', best.t.toFixed(3), '-i', file, '-frames:v', '1', '-vf', `crop=96:96:${cx + 80}:${cy + 80},scale=288:288:flags=neighbor`, f2]);
-      items.push({ img: f1, label: `원본 256px (${cx},${cy})` }, { img: f2, label: '3배 확대' });
+      ffmpeg(['-ss', best.t.toFixed(3), '-i', file, '-frames:v', '1', '-vf', `crop=${cs}:${cs}:${cx}:${cy}`, f1]);
+      ffmpeg(['-ss', best.t.toFixed(3), '-i', file, '-frames:v', '1', '-vf', `crop=${zs}:${zs}:${cx + zo}:${cy + zo},scale=${zs * 3}:${zs * 3}:flags=neighbor`, f2]);
+      items.push({ img: f1, label: `원본 ${cs}px (${cx},${cy})` }, { img: f2, label: '3배 확대' });
     }
   }
   const T = {
