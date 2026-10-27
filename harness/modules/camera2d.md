@@ -5,14 +5,14 @@
 
 ## 만들기
 ```js
-const cam = MH.cam(document.getElementById('world'), { W, H });   // 월드는 깊이 1 레이어
+const cam = MH.cam(document.getElementById('world'));   // 월드는 깊이 1 레이어, 크기는 자동 감지
 ```
-`W`,`H` 는 생략하면 DNA.W/H → `#root` 의 data-width/height → 1920×1080 순으로 읽는다. 9:16 은 1080×1920 이므로 숫자를 박지 말고 `cam.W`,`cam.H` 를 쓴다.
+크기는 DNA.W/H → `#root` 의 data-width/height → 1920×1080 순으로 읽는다(직접 줄 땐 `{ W: 1080, H: 1920 }`). 9:16 이므로 숫자를 박지 말고 `cam.W`,`cam.H` 를 쓴다.
 ```js
 cam.layer(document.getElementById('far'), 0.4)   // 먼 배경: 느리게
    .layer(document.getElementById('hud'), 0)     // 자막·로고: 화면 고정
    .layer(document.getElementById('fg'), 1.4);   // 전경: 더 크게 움직임
-MH.drive(tl, DUR, t => cam.render(t));
+MH.drive(tl, DUR, t => cam.render(t));   // tl·DUR 는 장면의 타임라인·길이
 ```
 레이어는 `position:absolute; left:0; top:0`. `render` 가 `transform`·`transform-origin:0 0` 을 덮어쓰므로 자체 transform 은 안쪽 자식에 둔다.
 
