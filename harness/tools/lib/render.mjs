@@ -19,7 +19,7 @@ export function mblurMixArgs(tmp, final, base) {
 
 // scene/index.html 의 #root data-fps (없거나 이상하면 30)
 export function rootFps(html) {
-  const tag = /<[^>]*\bid=["']root["'][^>]*>/.exec(String(html ?? ''));
+  const tag = /<[^>]*(?<![\w-])id=["']root["'][^>]*>/.exec(String(html ?? ''));
   const m = tag && /\bdata-fps=["']([\d.]+)["']/.exec(tag[0]);
   const n = m ? parseFloat(m[1]) : NaN;
   return n > 0 ? n : 30;

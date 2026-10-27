@@ -182,3 +182,18 @@ test('briefTemplate golden text', () => {
 -
 `);
 });
+
+test('lens.rack: dof.rack( alone is caught (R12), reported once per call', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-rack-'));
+  fs.mkdirSync(path.join(d, 'scene', 'compositions'), { recursive: true }); fs.mkdirSync(path.join(d, 'work'));
+  fs.writeFileSync(path.join(d, 'scene', 'compositions', 's1.html'), '<script>\n  const dof = cam2.dof;\n  dof.rack([[0, 1], [2, 2]]);\n</script>\n');
+  const r = runGate(d);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.violations.map(v => [v.id, v.reason, v.line]), [['lens.rack', 'no-row', 3]]);
+  fs.writeFileSync(path.join(d, 'scene', 'compositions', 's1.html'), '<script>\n  lens.rack(dof, [[0, 1]]);\n</script>\n');
+  assert.deepEqual(runGate(d).violations.map(v => [v.id, v.reason, v.line]), [['lens.rack', 'no-row', 2]]);
+});
+test('lens.rack: no scene/template/runtime file outside modules trips .rack(', () => {
+  const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]);
+  for (const f of walk('harness/template').filter(f => /\.html$/.test(f))) assert.ok(!fs.readFileSync(f, 'utf8').includes('.rack('), f);
+});

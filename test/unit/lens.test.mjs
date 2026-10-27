@@ -67,6 +67,14 @@ test('lens2d.md uses the gate spellings', () => {
   const md = fs.readFileSync('harness/modules/lens2d.md', 'utf8');
   for (const s of ['const lens = MH.lens;', 'lens.dof(', 'lens.rack(', 'lens.smear(']) assert.ok(md.includes(s), s);
 });
+test('dof preserves a layer\'s original inline filter and composes blur after it', () => {
+  const cam = fakeCam(3, 1); cam.layers[0].el.style.filter = 'drop-shadow(0 0 4px #000)'; cam.layers[1].el.style.filter = 'contrast(1.2)';
+  const lens = MH.lens.dof(cam, { focus: 1, aperture: 2 });
+  lens.render(0);
+  assert.deepEqual(cam.layers.map(l => l.el.style.filter), ['drop-shadow(0 0 4px #000) blur(4px)', 'contrast(1.2)']);
+  lens.render(1); lens.rack([[0, 3]]); lens.render(1);              // 반복 render 가 blur 를 누적하지 않는다
+  assert.deepEqual(cam.layers.map(l => l.el.style.filter), ['drop-shadow(0 0 4px #000)', 'contrast(1.2) blur(4px)']);
+});
 test('rack is deterministic', () => {
   const run = () => { const cam = fakeCam(2.7); const l = MH.lens.dof(cam).rack([[0, 1], [2, 3]]); return [0, 0.3, 1.1, 1.9, 2.5].map(t => (l.render(t), cam.layers[0].el.style.filter)); };
   assert.deepEqual(run(), run());
@@ -85,6 +93,13 @@ test('smear creates one filter per element and scales stdDeviation with speed', 
   MH.lens.smear(el, -250, 1000);
   assert.equal(document.body.children.length, 1);                    // 재생성 없음
   assert.equal(fe.attrs.stdDeviation, '5 20');                       // 속도의 절댓값
+});
+test('smear filter region is enlarged and sRGB so large blur is not clipped', () => {
+  const { MH, document } = setup(), el = { style: {} };
+  MH.lens.smear(el, 500, 0);
+  const f = document.body.children[0].children[0];
+  assert.deepEqual([f.attrs.x, f.attrs.y, f.attrs.width, f.attrs.height], ['-50%', '-50%', '200%', '200%']);
+  assert.equal(f.attrs['color-interpolation-filters'], 'sRGB');
 });
 test('smear caps at max and honors k', () => {
   const { MH, document } = setup(), el = { style: {} };
@@ -125,7 +140,9 @@ test('rootFps reads data-fps from #root, defaults 30', () => {
   assert.equal(rootFps('<div data-fps="60" id="root">'), 60);
   assert.equal(rootFps('<div id="root" data-width="1920">'), 30);
   assert.equal(rootFps('<div id="root" data-fps="0">'), 30);
-  assert.equal(rootFps('<div data-fps="12">'), 30);               // #root 가 아니면 무시
+  assert.equal(rootFps('<div data-fps="12">'), 30);
+  assert.equal(rootFps('<div data-id="root" data-fps="12">'), 30);   // data-id 는 #root 가 아니다
+  assert.equal(rootFps('<div data-id="x" id="root" data-fps="24">'), 24);               // #root 가 아니면 무시
 });
 
 // ── 연결 ──

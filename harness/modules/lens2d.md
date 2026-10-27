@@ -11,9 +11,9 @@ const dof = lens.dof(cam, { focus: 1, aperture: 6 });       // 기본값 그대�
 lens.rack(dof, [[0, 1.4], [2, 1], [4, 0.4]]);               // [t, focus]: 키 사이는 선형, 양 끝은 유지
 MH.drive(tl, DUR, t => { cam.render(t); dof.render(t); });  // 순서: cam.render 먼저
 ```
-- 초점 이동은 `lens.rack(dof, keys)` 로 쓴다(`dof.rack(keys)` 와 같지만 게이트가 이 표기를 찾는다).
+- 초점 이동은 `lens.rack(dof, keys)` 또는 `dof.rack(keys)` 로 쓴다(둘 다 게이트가 찾는다).
 - 레이어 흐림 = `min(24, |깊이 − focus|·aperture)` px. 초점 깊이는 선명, 멀수록 흐리다.
-- `render` 는 `filter` 만 쓰고 카메라는 `transform` 만 쓰므로 겹치지 않는다. 레이어에 다른 filter 가 필요하면 안쪽 자식에 둔다.
+- `render` 는 `filter` 만 쓰고 카메라는 `transform` 만 쓰므로 겹치지 않는다. 레이어에 처음 붙어 있던 인라인 filter 는 보존되고 그 뒤에 blur 가 덧붙는다.
 - 깊이 0(화면 고정) 레이어도 흐려진다. 선명해야 할 자막은 `cam.layer` 에 넣지 않는다.
 - 레이어 깊이가 다 달라야 효과가 보인다(레이어 하나면 통째로 흐려진다).
 

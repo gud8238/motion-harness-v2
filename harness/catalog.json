@@ -11,7 +11,7 @@
   {"id":"cam.parallax","tier":2,"module":"camera2d","api":["cam.layer("],"detect":"residualDepth","desc":"레이어마다 다른 속도로 움직여 깊이감을 만든다","ko":["시차","패럴랙스","깊이감"]},
   {"id":"cam.onetake","tier":2,"module":"stage","api":["MH.stage2d("],"detect":"globalMotion","desc":"컷 없이 하나의 무대를 카메라가 이어서 보여준다","ko":["원테이크"]},
   {"id":"lens.dof","tier":2,"module":"lens2d","api":["lens.dof("],"detect":"sharpnessMap","desc":"초점 밖 영역을 흐리게 한다","ko":["심도","배경 흐림","보케"]},
-  {"id":"lens.rack","tier":2,"module":"lens2d","api":["lens.rack("],"detect":"sharpnessShift","desc":"초점이 한 대상에서 다른 대상으로 옮겨간다","ko":["초점 이동","래크 포커스"]},
+  {"id":"lens.rack","tier":2,"module":"lens2d","api":["lens.rack(",".rack("],"detect":"sharpnessShift","desc":"초점이 한 대상에서 다른 대상으로 옮겨간다","ko":["초점 이동","래크 포커스"]},
   {"id":"lens.smear","tier":2,"module":"lens2d","api":["lens.smear("],"detect":"directionalBlur","desc":"빠르게 움직이는 요소만 이동 방향으로 번진다","ko":["잔상","스미어","요소 번짐"]},
   {"id":"lens.mblur","tier":2,"module":"lens2d","api":[],"detect":"directionalBlur","desc":"렌더 단계에서 화면 전체에 모션 블러를 준다","ko":["모션 블러"]},
   {"id":"fx.vhs","tier":2,"module":"fx2d","api":["fx.vhs("],"detect":"rowJitter","desc":"비디오테이프처럼 줄 떨림·색 번짐·노이즈를 입힌다","ko":["VHS","비디오테이프"]},

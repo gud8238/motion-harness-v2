@@ -47,7 +47,9 @@ export function runGate(projDir) {
   const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /\.html$/i.test(f)).sort() : [];
   for (const f of files) {
     const file = rel(proj, path.join(dir, f));
+    const seen = new Set();                                                   // 같은 호출이 api 두 개(lens.rack( · .rack()에 걸려도 한 번만 보고
     for (const hit of findApiCalls(read(path.join(dir, f)), catalog)) {
+      const key = hit.ids.join('/') + ':' + hit.line; if (seen.has(key)) continue; seen.add(key);
       const mine = rows.filter(r => hit.ids.includes(r.id) && status.has(r));
       if (mine.some(r => status.get(r) === null)) continue;
       if (!mine.length) { violations.push({ id: hit.ids.join('/'), file, line: hit.line, reason: 'no-row' }); continue; }

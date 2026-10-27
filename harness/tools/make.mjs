@@ -50,15 +50,18 @@ if (opt.check) process.exit(0);
 const draft = !!opt.draft, final = path.join(outDir, draft ? 'draft.mp4' : `${name}.mp4`);
 const mblur = !draft && wantsMotionBlur(fs.existsSync(path.join(work, 'PLAN.md')) ? fs.readFileSync(path.join(work, 'PLAN.md'), 'utf8') : '');
 const base = mblur ? rootFps(fs.readFileSync(path.join(sceneDir, 'index.html'), 'utf8')) : 30, tmp = path.join(work, 'mblur-tmp.mp4');
+if (mblur && (!Number.isInteger(base) || base * 4 > 240)) die(`모션 블러는 장면 #root 의 data-fps 가 60 이하의 정수일 때만 쓸 수 있습니다 (지금 ${base}, 4배 렌더는 240fps 까지) — data-fps 를 낮추거나 효과 표에서 lens.mblur 행을 지우세요`);
 if (mblur) console.log('· 모션 블러: 렌더 시간 약 4배');
 console.log(`렌더 중… (${draft ? '초안 15fps' : '최종'})`);
 const args = ['render', sceneDir, '-o', mblur ? tmp : final, '--quiet', ...(draft ? ['--quality', 'draft', '--fps', '15'] : ['--quality', 'looks', ...(mblur ? ['--fps', String(mblurArgs(base).fps)] : [])])];
 const r = hf(args);   // 로그는 Claude 가 읽지 않도록 숨기고, 실패할 때만 끝부분을 보여준다
 if (r.status !== 0 || !fs.existsSync(mblur ? tmp : final)) { fs.rmSync(tmp, { force: true }); console.error(String((r.stderr || '') + (r.stdout || '')).split('\n').filter(l => !/GPU stall|GL Driver|deprecated with r150/.test(l)).slice(-25).join('\n')); die('렌더 실패 (위 로그)'); }
 if (mblur) {
-  const mix = ffmpeg(mblurMixArgs(tmp, final, base), { allowFail: true });
+  const part = final + '.part.mp4';                    // 성공하면 이름을 바꾼다 — 실패해도 이전 결과를 덮어쓰지 않는다
+  const mix = ffmpeg(mblurMixArgs(tmp, part, base), { allowFail: true });
   fs.rmSync(tmp, { force: true });
-  if (mix.status !== 0 || !fs.existsSync(final)) { console.error(String(mix.stderr || '').slice(-800)); die('모션 블러 합성 실패 (위 로그)'); }
+  if (mix.status !== 0 || !fs.existsSync(part)) { fs.rmSync(part, { force: true }); console.error(String(mix.stderr || '').slice(-800)); die('모션 블러 합성 실패 (위 로그)'); }
+  fs.renameSync(part, final);
 }
 console.log(`  렌더 완료 ${sec()}`);
 

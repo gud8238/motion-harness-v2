@@ -3,7 +3,7 @@
  * dof(cam, {focus, aperture}) → Lens.  레이어 깊이 d 의 흐림 = min(24, |d − focus|·aperture) px.
  *   Lens.rack(keys) · lens.rack(Lens, keys)  [[t, focus], …] 키 사이는 선형, 첫 키 앞·마지막 키 뒤는 그 값 유지. 체인 가능.
  *   Lens.render(t)   cam.layers 마다 style.filter = 'blur(Npx)' (0.05px 미만은 ''). 반드시 cam.render(t) 다음에 부른다 — filter 와 transform 은 서로 다른 속성이라 겹치지 않는다.
- *                    레이어에 다른 CSS filter 가 필요하면 안쪽 자식 요소에 둔다(render 가 바깥 요소의 filter 를 덮어쓴다).
+ *                    레이어에 처음 render 때 붙어 있던 인라인 filter 는 보존하고 그 뒤에 blur 를 덧붙인다(`${원래} blur(Npx)`). 그 뒤에 바뀐 filter 는 반영되지 않는다.
  * smear(el, vx, vy, {k, max}) — 요소 하나의 속도(화면 px/s)에 비례해 이동 방향으로 번진다. SVG feGaussianBlur 를 요소당 1회 만들고 stdDeviation 만 갱신한다.
  *   축 정렬(x 와 y 를 따로 흐림) — 대각선 이동의 회전된 번짐은 지원하지 않는다.
  * 모션 블러(lens.mblur)는 API 가 없다: 효과 표의 행으로 켜며 make 가 렌더 때 4배 프레임으로 합성한다.
@@ -20,7 +20,8 @@ const fmt = v => +v.toFixed(2);
 const blurFor = (depth, focus, aperture) => Math.min(MAXBLUR, Math.abs(depth - focus) * aperture);
 
 function dof(cam, { focus = 1, aperture = 6 } = {}) {
-  let keys = null;                                                   // [[t, focus, E.linear], …] 정렬·중복 t 제거
+  let keys = null;
+  const bases = new WeakMap();                                       // 레이어 el → 처음 render 때 본 원래 인라인 filter                                                   // [[t, focus, E.linear], …] 정렬·중복 t 제거
   const focusAt = t => (keys ? MH.kf(t, keys) : focus);
   const self = {
     rack(list) {
@@ -37,8 +38,9 @@ function dof(cam, { focus = 1, aperture = 6 } = {}) {
     render(t) {
       const f = focusAt(t);
       for (const l of cam.layers) {
-        const b = blurFor(l.depth, f, aperture);
-        l.el.style.filter = b < MIN ? '' : `blur(${fmt(b)}px)`;
+        let base = bases.get(l.el); if (base === undefined) bases.set(l.el, base = l.el.style.filter || '');
+        const b = blurFor(l.depth, f, aperture), blur = b < MIN ? '' : `blur(${fmt(b)}px)`;
+        l.el.style.filter = [base, blur].filter(Boolean).join(' ');   // 원래 filter 뒤에 흐림을 덧붙인다
       }
       return self;
     },
@@ -61,6 +63,8 @@ function smear(el, vx, vy, { k = 0.02, max = 40 } = {}) {
     svg.setAttribute('width', '0'); svg.setAttribute('height', '0'); svg.setAttribute('aria-hidden', 'true');
     svg.style.position = 'absolute';
     filter.setAttribute('id', id); fe.setAttribute('stdDeviation', '0 0');
+    filter.setAttribute('x', '-50%'); filter.setAttribute('y', '-50%'); filter.setAttribute('width', '200%'); filter.setAttribute('height', '200%');   // 기본 영역(±10%)이면 큰 번짐이 사각형으로 잘린다
+    filter.setAttribute('color-interpolation-filters', 'sRGB');
     filter.appendChild(fe); svg.appendChild(filter); host.appendChild(svg);
     _smears.set(el, s = { fe, url: `url(#${id})` });
   }
