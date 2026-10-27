@@ -443,8 +443,21 @@ const phys = {
   },
 };
 
+// ───────────── 이징 이름 해석 (mh-cam·mh-morph 공용) ─────────────
+// checkEase: undefined|null|'dna'|E 이름|함수만 통과(오타는 오류). easeOf: 이름·함수 → 함수 ('dna' = DNA.easeFn, 없으면 E.inOut)
+const EASE_NAMES = Object.keys(E).filter(k => k !== 'bez');
+const checkEase = e => {
+  if (e == null || e === 'dna' || typeof e === 'function' || (typeof e === 'string' && EASE_NAMES.includes(e))) return e;
+  throw new Error(`알 수 없는 ease ${JSON.stringify(e)} — 사용 가능: dna, ${EASE_NAMES.join(', ')} 또는 함수`);
+};
+const easeOf = e => {
+  if (typeof e === 'function') return e;
+  if (e === 'dna' || e == null) return (window.DNA && window.DNA.easeFn) || E.inOut;
+  return E[e];
+};
+
 window.MH = {
-  TAU, clamp, lerp, seg, map, mix, E, bezier, spring, SPRING, tween, springAt, kf, stagger, quant, beatOf, onBeat, breathe,
+  checkEase, easeOf, TAU, clamp, lerp, seg, map, mix, E, bezier, spring, SPRING, tween, springAt, kf, stagger, quant, beatOf, onBeat, breathe,
   rng, hash, noise, noise2, boil, rgba, mixColor, rr, circle, line, shadow, noShadow, grain, vignette, gradient, paper, withCam,
   screenSize, FONT, font, wrap, txt, measure, txtIn, IMG, img, cutout, transitions: TRANS, trans, layer, subtitle,
   drive, stage, clear, load, gsapEase,

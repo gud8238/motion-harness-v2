@@ -197,3 +197,10 @@ test('lens.rack: no scene/template/runtime file outside modules trips .rack(', (
   const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]);
   for (const f of walk('harness/template').filter(f => /\.html$/.test(f))) assert.ok(!fs.readFileSync(f, 'utf8').includes('.rack('), f);
 });
+
+test('morph.many( alone is caught as morph.shape no-row (R14)', () => {
+  const d = copy('missing');
+  fs.writeFileSync(path.join(d, 'scene', 'compositions', 's1.html'), '<script>\n  const morph = MH.morph;\n  const ds = morph.many(t, eyes, oo, { t0: 3 });\n</script>\n');
+  const r = runGate(d);
+  assert.deepEqual(r.violations.map(v => [v.id, v.reason, v.line]), [['morph.shape', 'no-row', 3]]);
+});

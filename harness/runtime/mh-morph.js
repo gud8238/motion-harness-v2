@@ -1,25 +1,19 @@
 /* MH.morph — 도형↔도형, 도형↔글자 모핑 (클래식 스크립트, mh.js 다음 → window.MH.morph. flubber·opentype.js 전역 필요)
  * 경로 문자열 만들기: roundRect · blob · circle (닫힌 단일 경로). 글자: text() 가 Pretendard OTF 에서 글자별 경로를 뽑는다(Promise).
  * shape(t, a, b, o): t ≤ t0 → a 그대로, t ≥ t0+dur → b 그대로, 그 사이는 flubber 보간(경로 쌍별 캐시). 모든 값은 t 의 순수 함수.
- * many(t, as[], bs[], o): 여러 경로 동시에 → string[]. 개수가 같으면 1:1, 한쪽이 1개면 나누기(1→N)·합치기(N→1). */
+ * many(t, as[], bs[], o): 여러 경로 동시에 → string[]. 개수가 같으면 1:1, 한쪽이 1개면 나누기(1→N)·합치기(N→1).
+ *   1→N·N→1 은 t0 이전에도 a 자체가 아니라 a 를 나눈 조각(또는 b 쪽 조각)을 돌려준다. 끝은 b 의 조각.
+ * split(d) → { outer, holes[] }: 구멍 있는 글자를 바깥 윤곽만 모핑하고 구멍은 따로 그리기 위해 쓴다.
+ * 이징이 되튀는 종류(E.back 등)여도 진행도는 0..1 로 잘려 끝에서 b 를 넘지 않는다. */
 (function () {
 'use strict';
 const MH = window.MH;
 if (!MH) throw new Error('mh-morph.js 는 mh.js 다음에 불러와야 합니다.');
-const { clamp, E } = MH;
+const { clamp } = MH;
 
 const K = 0.5523;                                       // 원을 큐빅 4개로 근사하는 상수
 const n3 = v => String(+(+v).toFixed(3) + 0);
-const EASES = Object.keys(E).filter(k => k !== 'bez');
-const checkEase = e => {
-  if (e == null || e === 'dna' || typeof e === 'function' || (typeof e === 'string' && EASES.includes(e))) return e;
-  throw new Error(`알 수 없는 ease ${JSON.stringify(e)} — 사용 가능: dna, ${EASES.join(', ')} 또는 함수`);
-};
-const easeOf = e => {
-  if (typeof e === 'function') return e;
-  if (e === 'dna' || e == null) return (window.DNA && window.DNA.easeFn) || E.inOut;
-  return E[e];
-};
+const { checkEase, easeOf } = MH;
 const lib = (name, what) => {
   const l = window[name];
   if (!l) throw new Error(`${name} 라이브러리가 없습니다 (${what}) — index.html 에 assets/lib/${name === 'flubber' ? 'flubber' : 'opentype'}.min.js 가 mh-morph.js 보다 먼저 있어야 합니다. /motion-harness2:mv-new 를 다시 실행해 라이브러리를 갱신하세요.`);
@@ -40,6 +34,12 @@ function roundRect(x, y, w, h, r = 0) {
   return `M${p(x + r, y)}H${n3(x + w - r)}C${p(x + w - r + c, y, x + w, y + r - c, x + w, y + r)}V${n3(y + h - r)}C${p(x + w, y + h - r + c, x + w - r + c, y + h, x + w - r, y + h)}H${n3(x + r)}C${p(x + r - c, y + h, x, y + h - r + c, x, y + h - r)}V${n3(y + r)}C${p(x, y + r - c, x + r - c, y, x + r, y)}Z`;
 }
 
+// 경로 → 바깥 윤곽(첫 부분경로)과 구멍들(나머지). 글자 'o' → 바깥 1 + 구멍 1. 구멍은 모핑하지 않고 장면이 따로 그린다.
+function split(d) {
+  const parts = String(d).split(/(?=[Mm])/).map(q => q.trim()).filter(Boolean);
+  return { outer: parts[0] || '', holes: parts.slice(1) };
+}
+
 // ───────────── 보간 ─────────────
 const cache = new Map();
 const cached = (key, make) => { let f = cache.get(key); if (!f) cache.set(key, f = make()); return f; };
@@ -48,7 +48,7 @@ const prog = (t, o) => {
   checkEase(ease);
   if (t <= t0) return 0;
   if (t >= t0 + dur || dur <= 0) return 1;
-  return easeOf(ease)((t - t0) / dur);
+  return clamp(easeOf(ease)((t - t0) / dur), 0, 1);               // 되튀는 이징은 0..1 로 자른다
 };
 const OPT = { maxSegmentLength: 4 };
 
@@ -98,5 +98,5 @@ async function text(str, { weight = 'extrabold', size = 200, x = 0, y = 0 } = {}
   return font.getPaths(String(str), x, y, size).filter(p => p.commands.length).map(p => p.toPathData(2));   // 공백은 명령이 없어 빠진다
 }
 
-MH.morph = { roundRect, blob, circle, shape, many, text };
+MH.morph = { roundRect, blob, circle, split, shape, many, text };
 })();

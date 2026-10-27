@@ -14,16 +14,7 @@ const PROPS = ['x', 'y', 'zoom', 'rot'];
 const FADE = 0.1;                                       // 흔들림 페이드 인·아웃(초)
 const nz = v => v + 0;                                  // -0 → 0
 const fmt = v => String(nz(+v.toFixed(5)));
-const EASES = Object.keys(E).filter(k => k !== 'bez');
-const checkEase = e => {
-  if (e == null || e === 'dna' || typeof e === 'function' || (typeof e === 'string' && EASES.includes(e))) return e;
-  throw new Error(`알 수 없는 ease ${JSON.stringify(e)} — 사용 가능: dna, ${EASES.join(', ')} 또는 함수`);
-};
-const easeOf = e => {
-  if (typeof e === 'function') return e;
-  if (e === 'dna' || e == null) return (window.DNA && window.DNA.easeFn) || E.inOut;
-  return E[e];
-};
+const { checkEase, easeOf } = MH;
 
 function cam(worldEl, o = {}) {
   const [W, H] = MH.screenSize(o), CX = W / 2, CY = H / 2;

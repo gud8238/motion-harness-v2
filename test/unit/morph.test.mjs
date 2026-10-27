@@ -126,7 +126,7 @@ test('morph.md size and gate strings', () => {
   assert.ok(fs.statSync('harness/modules/morph.md').size <= 3072);
   const md = fs.readFileSync('harness/modules/morph.md', 'utf8');
   assert.ok(md.includes('const morph = MH.morph;'));
-  for (const s of ['morph.shape(', 'morph.text(', 'morph.many(', 'buildReady']) assert.ok(md.includes(s), s);
+  for (const s of ['morph.shape(', 'morph.text(', 'morph.many(', 'morph.split(', 'buildReady']) assert.ok(md.includes(s), s);
 });
 
 test('setup / new / template wire the libs and fonts', () => {
@@ -135,4 +135,46 @@ test('setup / new / template wire the libs and fonts', () => {
   for (const s of ['flubber', 'build', 'flubber.min.js', 'opentype.js', 'opentype.min.js', 'mh-morph.js', 'Pretendard-Bold.otf', 'Pretendard-ExtraBold.otf']) assert.ok(nw.includes(s), 'new ' + s);
   const order = ['mh-fx.js', 'flubber.min.js', 'opentype.min.js', 'mh-morph.js'].map(s => idx.indexOf('assets/lib/' + s));
   assert.ok(order.every(i => i > 0)); assert.deepEqual([...order].sort((a, b) => a - b), order);
+});
+
+test('split: real "o" glyph gives 1 outer + 1 hole, each a single subpath; circle has no holes', async () => {
+  const M = load({ fetch: stubFetch() });
+  const [o] = await M.morph.text('o', { size: 300 });
+  assert.equal((o.match(/M/g) || []).length, 2);
+  const sp = M.morph.split(o);
+  assert.equal((sp.outer.match(/M/g) || []).length, 1);
+  assert.equal(sp.holes.length, 1);
+  assert.equal((sp.holes[0].match(/M/g) || []).length, 1);
+  assert.ok(sp.outer.startsWith('M') && sp.holes[0].startsWith('M'));
+  const c = M.morph.split(M.morph.circle(5, 5, 3));
+  assert.equal(c.outer, M.morph.circle(5, 5, 3)); assert.equal(c.holes.length, 0);
+  // 바깥 윤곽만 모핑하면 중간 프레임도 부분경로 1개
+  assert.equal((M.morph.shape(0.3, M.morph.circle(50, 50, 20), sp.outer, { dur: 0.6 }).match(/M/gi) || []).length, 1);
+});
+
+test('overshoot eases are clipped to 0..1 and end exactly on b', () => {
+  const a = MH.morph.circle(50, 50, 20), b = MH.morph.roundRect(20, 20, 60, 60, 10);
+  for (let t = 0; t <= 1.0001; t += 0.05) assert.ok(!/NaN|Infinity/.test(MH.morph.shape(t, a, b, { ease: 'back', dur: 1 })));
+  assert.equal(MH.morph.shape(1, a, b, { ease: 'back', dur: 1 }), b);
+});
+
+test('many 1→N before t0 returns N fragments of a, not a', () => {
+  const one = [MH.morph.circle(50, 50, 30)], two = [MH.morph.circle(30, 50, 10), MH.morph.circle(70, 50, 10)];
+  const r = Array.from(MH.morph.many(0, one, two, { t0: 1 }));
+  assert.equal(r.length, 2); assert.ok(!r.includes(one[0]));
+});
+
+test('MH.easeOf / MH.checkEase are shared helpers', () => {
+  assert.equal(MH.checkEase('inOut'), 'inOut'); assert.equal(MH.checkEase(undefined), undefined);
+  assert.throws(() => MH.checkEase('inOutt'), /알 수 없는 ease/);
+  assert.equal(MH.easeOf('inOut'), MH.E.inOut); assert.equal(MH.easeOf(null), MH.E.inOut);
+  const f = x => x; assert.equal(MH.easeOf(f), f);
+  const w = loadRuntime(['harness/runtime/mh.js']); w.DNA = { easeFn: f };
+  assert.equal(w.MH.easeOf('dna'), f);
+  for (const file of ['mh-cam.js', 'mh-morph.js']) assert.ok(!/const EASES/.test(fs.readFileSync('harness/runtime/' + file, 'utf8')), file);
+});
+
+test('catalog: morph.shape api includes morph.many( (R14)', () => {
+  const e = JSON.parse(fs.readFileSync('harness/catalog.json', 'utf8')).find(x => x.id === 'morph.shape');
+  assert.deepEqual(e.api, ['morph.shape(', 'morph.many(']);
 });
