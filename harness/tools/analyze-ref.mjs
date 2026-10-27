@@ -1,5 +1,5 @@
 // 레퍼런스 측정: 영상(또는 이미지)을 숫자와 시트로 바꾼다 → 스타일 DNA의 근거
-// node harness/tools/analyze-ref.mjs 모션1 ref/참고.mp4 [--thr 0.3]
+// node harness/tools/analyze-ref.mjs 모션1 ref/참고.mp4 [--thr 0.3]   (--thr = ffmpeg scene 컷 문턱; 프레임 차이 스파이크 컷은 항상 함께 쓴다)
 // node harness/tools/analyze-ref.mjs 모션1 ref/            (ref 폴더의 영상·이미지 전부)
 // node harness/tools/analyze-ref.mjs strip 모션1 ref/참고.mp4 4.6 5.4   (놓친 효과의 근거 strip → work/ref-참고/ev_m01.png)
 // 결과: work/ref-<이름>/ analysis.md, analysis.json, sheet.jpg(1초 간격), shots.png(샷별 대표), motion_N.png(움직임 연속 프레임), palette,
@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { projectDir, parseArgs, die, ensureDir, ffmpeg, probe, rawFrames, palette, board, chromium, writeJSON, fwd, ROOT } from './_common.mjs';
-import { measureSeries, buildCandidates, estimateStrength, stripImage, evidenceBoard, evLabel, evidenceCell, nameStrips, isAutoStrip, NO_CANDIDATES } from './lib/evidence.mjs';
+import { frameDiffs, spikeCuts, mergeCuts, measureSeries, buildCandidates, estimateStrength, stripImage, evidenceBoard, evLabel, evidenceCell, nameStrips, isAutoStrip, NO_CANDIDATES } from './lib/evidence.mjs';
 
 const { pos, opt } = parseArgs();
 const STRIP = pos[0] === 'strip', args = STRIP ? pos.slice(1) : pos;
@@ -62,10 +62,12 @@ async function analyzeVideo(file) {
   const fsz = mw * mh, nF = Math.floor(g.length / fsz), energy = [0];
   for (let i = 1; i < nF; i++) { let s = 0; for (let j = 0; j < fsz; j++) s += Math.abs(g[i * fsz + j] - g[(i - 1) * fsz + j]); energy.push(s / fsz / 255); }
 
-  // 2) 컷 검출 (ffmpeg scene score)
+  // 2) 컷 검출: ffmpeg scene score(--thr) ∪ 프레임 차이 스파이크(비슷한 밝기의 평평한 화면끼리 컷도 잡는다, R7)
   const sc = ffmpeg(['-i', file, '-vf', `select='gt(scene,${thr})',showinfo`, '-an', '-f', 'null', '-'], { loglevel: 'info', allowFail: true });
-  let cuts = [...(sc.stderr || '').matchAll(/pts_time:([\d.]+)/g)].map(m => +m[1]).filter(t => t > 0.05 && t < P.duration - 0.05);
-  cuts = cuts.filter((t, i) => i === 0 || t - cuts[i - 1] > 0.2);
+  const sceneCuts = [...(sc.stderr || '').matchAll(/pts_time:([\d.]+)/g)].map(m => +m[1]);
+  let spikes = [];
+  try { const fd = frameDiffs(file, P); spikes = spikeCuts(fd.d, fd.fps); } catch (e) { console.error(`⚠ 감지 실패: frameDiffs: ${e.message}`); }
+  const cuts = mergeCuts([sceneCuts, spikes], P.duration);
   const bounds = [0, ...cuts, P.duration], shots = [];
   for (let i = 0; i < bounds.length - 1; i++) shots.push({ i: i + 1, start: +fmt(bounds[i]), end: +fmt(bounds[i + 1]), dur: +fmt(bounds[i + 1] - bounds[i]) });
   const durs = shots.map(s => s.dur).sort((a, b) => a - b);

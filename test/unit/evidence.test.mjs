@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { buildCandidates, estimateStrength, measureSeries, seriesSize, nameStrips, isAutoStrip, evidenceCell, TH } from '../../harness/tools/lib/evidence.mjs';
+import { buildCandidates, estimateStrength, measureSeries, seriesSize, nameStrips, isAutoStrip, evidenceCell, spikeCuts, frameDiffs, mergeCuts, TH } from '../../harness/tools/lib/evidence.mjs';
 import { parseEffectTable } from '../../harness/tools/lib/plan.mjs';
 import { probe } from '../../harness/tools/_common.mjs';
 import { pattern } from '../helpers/frames.mjs';
@@ -35,6 +35,13 @@ test('strided gm3 is preferred for camera totals (R5)', () => {
   const c = buildCandidates(S(24, i => ({ ...gm({ scale: 0.999 }), gm3: i % 3 === 0 && i + 3 < 24 ? { dx: 0, dy: 0, scale: 0.95, rot: 0, parallax: 0, n: 48 } : null })), [], 2, 160, 90);
   assert.ok(c.some(x => x.id === 'cam.push'));
 });
+test('fast zoom that block matching cannot follow: radial-spectrum scale (rs3, corr ≥ rsCorr) accumulates → cam.push', () => {
+  const rs = (scale, corr) => i => ({ ...gm({}), rs3: i % 3 === 0 && i + 3 < 24 ? { scale, corr } : null });
+  const c = buildCandidates(S(24, rs(0.8, 0.9)), [], 2, 160, 90).find(x => x.id === 'cam.push');
+  assert.ok(c && /축소/.test(c.signal) && /스펙트럼/.test(c.signal), JSON.stringify(c));
+  assert.ok(!ids(buildCandidates(S(24, rs(0.8, TH.rsCorr - 0.1)), [], 2, 160, 90)).includes('cam.push'));   // 상관 낮음 = 내용이 바뀐 것
+  assert.ok(!ids(buildCandidates(S(24, rs(0.8, 0.9)), [0.5, 1.0, 1.5], 2, 160, 90)).includes('cam.push'));   // 컷이 나누면 누적 안 됨
+});
 test('pan → cam.pan, not cam.push', () => {
   const c = buildCandidates(S(24, () => gm({ dx: 3 })), [], 2, 160, 90);
   assert.ok(ids(c).includes('cam.pan')); assert.ok(!ids(c).includes('cam.push'));
@@ -43,8 +50,13 @@ test('rotation → cam.rotate', () => assert.ok(ids(buildCandidates(S(24, () => 
 test('shake → cam.shake', () => {
   const c = buildCandidates(S(24, i => gm({ dx: i % 2 ? 2 : -2, dy: i % 2 ? -1 : 1 })), [], 2, 160, 90);
   assert.ok(ids(c).includes('cam.shake'), JSON.stringify(c));
+  assert.ok(!ids(buildCandidates(S(24, i => gm({ dx: i % 2 ? 1 : -1, res: 2 })), [], 2, 160, 90)).includes('cam.shake'));   // 맞춤 잔차보다 작은 왕복 = 측정 잡음
+  assert.ok(!ids(buildCandidates(S(24, i => gm({ dx: i % 2 ? 2 : -2, n: 8 })), [], 2, 160, 90)).includes('cam.shake'));     // 블록 몇 칸만 맞춤
 });
-test('parallax → cam.parallax', () => assert.ok(ids(buildCandidates(S(24, () => gm({ dx: 1, parallax: 1.6 })), [], 2, 160, 90)).includes('cam.parallax')));
+test('parallax → cam.parallax; misfit residual (scattered, larger than the top/bottom split) is not parallax', () => {
+  assert.ok(ids(buildCandidates(S(24, () => gm({ dx: 1, parallax: 1.6, res: 1 })), [], 2, 160, 90)).includes('cam.parallax'));
+  assert.ok(!ids(buildCandidates(S(24, () => gm({ dx: 1, parallax: 1.6, res: 3 })), [], 2, 160, 90)).includes('cam.parallax'));
+});
 test('long moving uncut segment → cam.onetake', () => {
   const c = buildCandidates(S(96, i => gm({ dx: i % 24 < 12 ? 0.5 : -0.5 })), [], 8, 160, 90);
   assert.ok(ids(c).includes('cam.onetake'));
@@ -58,8 +70,15 @@ test('dof: sharp center, soft (but not flat) edges ≥1s → lens.dof', () => {
 });
 test('rack focus: sharpest cell jumps ≥2 cells → lens.rack', () => {
   const at = k => Float32Array.from({ length: 12 }, (_, j) => j === k ? 300 : 20);
-  assert.ok(ids(buildCandidates(S(24, i => ({ sharp: at(i < 12 ? 4 : 7) })), [], 2, 160, 90)).includes('lens.rack'));
+  assert.ok(!ids(buildCandidates(S(24, i => ({ sharp: at(i < 12 ? 4 : 7) })), [], 2, 160, 90)).includes('lens.rack'));   // 한 프레임에 15배 뜀 = 컷처럼 바뀐 내용 (초점 이동은 여러 프레임에 걸친다)
   assert.ok(!ids(buildCandidates(S(24, i => ({ ...gm({ dx: 3 }), sharp: at(i < 12 ? 4 : 7) })), [], 2, 160, 90)).includes('lens.rack'));   // 패닝 중 선명 칸 이동 ≠ 랙포커스
+  const appear = Float32Array.from({ length: 12 }, (_, j) => j === 4 ? 300 : j === 7 ? 3 : 20), shown = Float32Array.from({ length: 12 }, (_, j) => j === 7 ? 300 : 20);
+  assert.ok(!ids(buildCandidates(S(24, i => ({ sharp: i < 12 ? appear : shown })), [], 2, 160, 90)).includes('lens.rack'));   // 빈 칸에 글자가 나타남 ≠ 초점 이동
+  const pop = Float32Array.from({ length: 12 }, (_, j) => j === 4 ? 300 : j === 7 ? 25 : 20);
+  assert.ok(!ids(buildCandidates(S(24, i => ({ sharp: i < 12 ? pop : at(7) })), [], 2, 160, 90)).includes('lens.rack'));   // 한 프레임에 12배 → 내용이 튀어나옴
+  const pull = i => Float32Array.from({ length: 12 }, (_, j) => j === 4 ? 300 / 1.6 ** Math.max(0, i - 6) : j === 7 ? 300 / 1.6 ** Math.max(0, 14 - i) : 20);   // 0.7초에 걸쳐 초점이 옮겨 감
+  assert.ok(ids(buildCandidates(S(24, i => ({ sharp: pull(i) })), [], 2, 160, 90)).includes('lens.rack'));
+  assert.ok(!ids(buildCandidates(S(24, i => ({ ...gm({ scale: 1.05 }), sharp: pull(i) })), [], 2, 160, 90)).includes('lens.rack'));   // 확대 중 = 화면이 움직임
 });
 test('motion blur on moving frames → lens.mblur', () => {
   const c = buildCandidates(S(36, i => ({ ...gm({ dx: i >= 12 && i < 24 ? 4 : 0 }), dblur: { ratio: i >= 12 && i < 24 ? 3 : 1 } })), [], 3, 160, 90);
@@ -68,10 +87,15 @@ test('motion blur on moving frames → lens.mblur', () => {
 test('smear without camera motion → lens.smear', () => {
   const c = buildCandidates(S(24, i => ({ dblur: { ratio: i >= 8 && i < 13 ? 3 : 1 } })), [], 2, 160, 90);
   assert.ok(ids(c).includes('lens.smear'));
+  assert.ok(!ids(buildCandidates(S(48, i => ({ dblur: { ratio: i < 30 ? 1 : 3 } })), [], 4, 160, 90)).includes('lens.smear'));   // 글자 줄이 나타나 계속 남음 = 고정 줄무늬 (R5)
 });
-test('vhs: sustained jitter above series median → fx.vhs; constant stripes do not trigger', () => {
-  assert.ok(ids(buildCandidates(S(36, i => ({ jitter: i >= 12 && i < 30 ? 2 : 0 })), [], 3, 160, 90)).includes('fx.vhs'));
-  assert.deepEqual(buildCandidates(S(36, () => ({ jitter: 3, dblur: { ratio: 40 } })), [], 3, 160, 90), []);
+test('vhs: tracking band (full-width edge + shifted rows near it) ≥0.5s → fx.vhs; band-like line on flat frames or short bursts do not', () => {
+  const band = (cover, jitter) => ({ band: { cover, y: 40, jitter } });
+  const c = buildCandidates(S(36, i => i >= 12 && i < 20 && i !== 15 ? band(1, 1.5) : band(0.4, 0.1)), [], 3, 160, 90).find(x => x.id === 'fx.vhs');
+  assert.ok(c && c.t0 === 1 && c.t1 >= 1.6, JSON.stringify(c));
+  assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 20 ? band(1, null) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));   // 평평한 바탕 위 선
+  assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 16 ? band(1, 1.5) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));    // 0.33초
+  assert.deepEqual(buildCandidates(S(36, () => ({ jitter: 3, dblur: { ratio: 40 } })), [], 3, 160, 90), []);   // 고정 줄무늬
 });
 test('glitch: ≥2 short jitter bursts → fx.glitch', () => {
   const c = buildCandidates(S(36, i => ({ jitter: i === 6 || i === 7 || i === 24 ? 4 : 0.2 })), [], 3, 160, 90);
@@ -95,14 +119,17 @@ test('whip: fast pan near a cut → trans.whip; same pan far from cuts does not'
 test('whip: block matching collapses while blur rises near cut → trans.whip', () => {
   const c = buildCandidates(S(36, i => ({ ...gm(i === 11 ? { n: 0 } : {}), dblur: { ratio: i === 11 ? 2 : 1 } })), [1.0], 3, 160, 90);
   assert.ok(ids(c).includes('trans.whip'), JSON.stringify(c));
+  const dip = buildCandidates(S(36, i => ({ ...gm(i === 11 ? { n: 0 } : {}), dblur: { ratio: i === 11 ? 2 : 1 }, fill: { ratio: i === 12 ? 1 : 0.1, hex: '#000000' } })), [1.0], 3, 160, 90);
+  assert.ok(!ids(dip).includes('trans.whip'), JSON.stringify(dip));   // 검은 화면으로 넘어가는 프레임: 매칭할 무늬가 없을 뿐
 });
-const blob = (cx, cy, area, sig, hex = '#f2c94c') => ({ hex, cx, cy, area, bbox: [0, 0, 1, 1], sig });
+const blob = (cx, cy, area, sig, hex = '#f2c94c', r = 8) => ({ hex, cx, cy, area, bbox: [cx - r, cy - r, cx + r, cy + r], sig });
 const ROUND = Float32Array.from({ length: 16 }, () => 1), SPIKY = Float32Array.from({ length: 16 }, (_, k) => k % 2 ? 0.1 : 1);
 test('match cut: same-hex blob in same place across cut → trans.match', () => {
   const c = buildCandidates(S(24, i => ({ blobs: [blob(i < 12 ? 80 : 82, 45, i < 12 ? 0.05 : 0.06, ROUND)] })), [1.0], 2, 160, 90);
   assert.ok(ids(c).includes('trans.match'));
   const far = buildCandidates(S(24, i => ({ blobs: [blob(i < 12 ? 20 : 140, 45, 0.05, ROUND)] })), [1.0], 2, 160, 90);
   assert.ok(!ids(far).includes('trans.match'));
+  assert.ok(!ids(buildCandidates(S(24, () => ({ blobs: [blob(80, 45, 0.005, ROUND)] })), [1.0], 2, 160, 90)).includes('trans.match'));   // 글자 조각 크기
 });
 test('shared element across ≥2 cuts → trans.shared', () => {
   const c = buildCandidates(S(36, i => ({ blobs: i === 20 ? [] : [blob(40 + i * 2, 45, 0.04, ROUND)] })), [1.0, 2.0], 3, 160, 90);
@@ -113,6 +140,17 @@ test('blob changes shape without cut → morph.shape', () => {
   const c = buildCandidates(S(24, i => ({ blobs: [blob(80, 45, 0.05, i < 12 ? ROUND : SPIKY)] })), [], 2, 160, 90);
   assert.ok(ids(c).includes('morph.shape'));
   assert.ok(!ids(buildCandidates(S(24, () => ({ blobs: [blob(80, 45, 0.05, ROUND)] })), [], 2, 160, 90)).includes('morph.shape'));
+});
+test('morph: one blob turns into a row of pieces (logo) in place, even through a frame where it is too small to see → morph.shape', () => {
+  const piece = (cx, cy) => ({ hex: '#f2c94c', cx, cy, area: 0.006, bbox: [cx - 3, cy - 4, cx + 3, cy + 4], sig: ROUND });
+  const c = buildCandidates(S(24, i => ({ ...gm({}), blobs: i < 10 ? [blob(80, 45, 0.02, ROUND)] : i === 10 ? [] : [60, 72, 88, 100].map(x => piece(x, 45)) })), [], 2, 160, 90);
+  assert.ok(ids(c).includes('morph.shape'), JSON.stringify(c));
+});
+test('morph: shape change explained by frame edge, moving camera or vanishing is not a morph', () => {
+  const edge = i => ({ ...gm({}), blobs: [{ ...blob(80, 85, 0.05, i < 12 ? ROUND : SPIKY), bbox: [70, 75, 90, 89] }] });   // 화면 아래 끝에 걸린 덩어리
+  assert.ok(!ids(buildCandidates(S(24, edge), [], 2, 160, 90)).includes('morph.shape'));
+  assert.ok(!ids(buildCandidates(S(24, i => ({ ...gm({ dx: 3 }), blobs: [blob(80, 45, 0.05, i < 12 ? ROUND : SPIKY)] })), [], 2, 160, 90)).includes('morph.shape'));
+  assert.ok(!ids(buildCandidates(S(24, i => ({ ...gm({}), blobs: [blob(80, 45, i < 12 ? 0.05 : 0.004, i < 12 ? ROUND : SPIKY, '#f2c94c', i < 12 ? 8 : 2)] })), [], 2, 160, 90)).includes('morph.shape'));
 });
 test('null detector fields are tolerated', () => {
   const nul = S(24, i => ({ gm: i % 2 ? null : undefined, gm3: null, sharp: null, dblur: null, fill: null, jitter: null, blobs: null }));
@@ -144,8 +182,8 @@ test('measureSeries: still video → static series of the right shape', () => {
   assert.deepEqual(seriesSize(P), [160, 90]);
   assert.ok(s.length >= 16 && s.length <= 19, `${s.length} 프레임`);
   assert.deepEqual(failed, []);
-  for (const k of ['t', 'gm', 'gm3', 'sharp', 'dblur', 'fill', 'jitter', 'blobs']) assert.ok(k in s[0], k);
-  assert.equal(s.at(-1).gm, null); assert.equal(s.at(-2).gm3, null);
+  for (const k of ['t', 'gm', 'gm3', 'rs3', 'sharp', 'dblur', 'fill', 'jitter', 'band', 'blobs']) assert.ok(k in s[0], k);
+  assert.equal(s.at(-1).gm, null); assert.equal(s.at(-2).gm3, null); assert.equal(s.at(-2).rs3, null);
   assert.deepEqual(buildCandidates(s, [], P.duration, 160, 90), []);
 });
 test('measureSeries: panning texture → strided motion beyond default range; cut blocks gm3', () => {
@@ -163,6 +201,11 @@ test('measureSeries: a failing detector leaves its field null and is reported', 
   const s = measureSeries(f, P, { accents: ['not-a-color'], failed, detectors: { accentBlobs: () => { throw new Error('x'); } } });
   assert.ok(s.every(e => e.blobs === null)); assert.deepEqual(failed, ['accentBlobs']);
 });
+test('measureSeries: only vivid accents (Lab chroma ≥ accentChroma) reach the blob detector — dark background colours are not accents', () => {
+  const f = path.join(tmp, 'still.mp4'), P = probe(f), seen = new Set();
+  measureSeries(f, P, { accents: ['#050a0c', '#0f242e', '#e5cc61', '#c8605a'], detectors: { accentBlobs: (rgb, w, h, acc) => { acc.forEach(a => seen.add(a)); return []; } } });
+  assert.deepEqual([...seen].sort(), ['#c8605a', '#e5cc61']);
+});
 test('measureSeries: series.size defaults buildCandidates W·H (not video pixels)', () => {
   const f = path.join(tmp, 'pan.mp4'), P = probe(f), s = measureSeries(f, P, { cuts: [1.0] });
   assert.deepEqual(s.size, seriesSize(P)); assert.ok(!Object.keys(s).includes('size'));
@@ -177,4 +220,40 @@ test('strip names are stable (id + start), unique, and parse as gate evidence', 
   const cell = evidenceCell('b_ref', 6.67, 7.67, c[0].strip);
   assert.equal(cell, 'b_ref 6.67–7.67s (ev_trans-fill_6.67.png)');
   assert.deepEqual(parseEffectTable(`효과 표\n| a | b | c | d |\n|---|---|---|---|\n| trans.fill | ② | ${cell} | s1 |`)[0].evidence, { ref: 'b_ref', t0: 6.67, t1: 7.67, img: 'ev_trans-fill_6.67.png' });
+});
+
+// ---- 컷: 프레임 차이 스파이크 (R7) ----
+const quiet = (n, seed = 1) => { let a = seed; return Float32Array.from({ length: n }, () => { a = (a * 16807) % 2147483647; return 0.002 + 0.003 * (a / 2147483647); }); };
+test('spikeCuts: isolated jump in a quiet series → one cut at that frame', () => {
+  const d = quiet(120); d[60] = 0.05;
+  assert.deepEqual(spikeCuts(d, 60), [1]);
+});
+test('spikeCuts: cut followed by fast motion still counts (quiet side decides); two cuts 0.2 s apart both count', () => {
+  const d = quiet(240); d[60] = 0.12; for (let i = 61; i < 100; i++) d[i] = 0.02 + 0.01 * (i % 3);   // 끝에서 갑자기 멈춰도 움직임 끝은 컷이 아니다
+  assert.deepEqual(spikeCuts(d, 60), [1]);
+  const e = quiet(240); e[120] = 0.15; e[132] = 0.2;
+  assert.deepEqual(spikeCuts(e, 60), [2, 2.2]);
+});
+test('spikeCuts: periodic flicker, sustained motion, abrupt start/stop of motion and small pops are not cuts', () => {
+  const g = quiet(240); for (let i = 60; i < 120; i++) g[i] = 0.06 + 0.01 * (i % 3);   // 갑자기 시작해 갑자기 멈추는 빠른 움직임
+  assert.deepEqual(spikeCuts(g, 60), []);
+  const f = quiet(240); for (let i = 12; i < 239; i += 12) { f[i] = 0.06; f[i + 1] = 0.03; }   // 0.2초마다 같은 크기 깜빡임(2프레임)
+  assert.deepEqual(spikeCuts(f, 60), []);
+  const m = Float32Array.from({ length: 240 }, (_, i) => 0.05 + 0.02 * Math.abs(Math.sin(i)));   // 빠른 카메라 이동
+  assert.deepEqual(spikeCuts(m, 60), []);
+  const p = quiet(120); p[60] = TH.cutMin * 0.8;   // 작은 요소 하나가 튀어나옴
+  assert.deepEqual(spikeCuts(p, 60), []);
+  assert.deepEqual(spikeCuts(new Float32Array(0), 60), []); assert.deepEqual(spikeCuts(quiet(3), 60), []);
+});
+test('mergeCuts: union, sorted, near-duplicates and edge times dropped', () => {
+  assert.deepEqual(mergeCuts([[2.07, 16.98], [2.0667, 7.33, 16.983, 19.02]], 19.05), [2.07, 7.33, 16.98]);
+  assert.deepEqual(mergeCuts([], 5), []);
+});
+test('frameDiffs + spikeCuts on decoded video: hard cut between two flat colours of similar brightness; smooth pan has none', () => {
+  const f = mk('cut.mp4', ['-f', 'lavfi', '-i', 'color=c=0xF5F5F5:s=320x180:r=30:d=1', '-f', 'lavfi', '-i', 'color=c=0xF2C94C:s=320x180:r=30:d=1', '-filter_complex', '[0][1]concat=n=2:v=1[v]', '-map', '[v]']);
+  const P = probe(f), { d, fps } = frameDiffs(f, P);
+  assert.equal(fps, 30); assert.ok(d.length >= 58 && d.length <= 61, String(d.length));
+  const c = spikeCuts(d, fps); assert.equal(c.length, 1); assert.ok(Math.abs(c[0] - 1) <= 1 / 30 + 1e-9, String(c));
+  const pan = path.join(tmp, 'pan.mp4'), Q = probe(pan), r = frameDiffs(pan, Q);
+  assert.deepEqual(spikeCuts(r.d, r.fps), []);
 });

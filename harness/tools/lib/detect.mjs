@@ -106,22 +106,95 @@ export function fillRatio(rgb, w, h) {
   return { ratio: c / n, hex: toHex([r / c, gg / c, b / c]) };
 }
 
-// 인접 행 쌍마다 ±8px 가로 이동 중 평균 절대차 최소인 이동량 |s| 의 평균(px). 동률이면 작은 |s|, 텍스처 없는 쌍은 제외
-export function rowJitter(g, w, h) {
-  const R = 8; let sum = 0, cnt = 0;
-  for (let y = 0; y + 1 < h; y++) {
-    const r0 = y * w, r1 = r0 + w; let best = Infinity, bs = 0, worst = -Infinity;
-    for (let k = 0; k <= 2 * R; k++) {
-      const s = k & 1 ? (k + 1) >> 1 : -(k >> 1), xa = Math.max(0, -s), xb = Math.min(w, w - s);
-      if (xb - xa < 1) continue;
-      let d = 0; for (let x = xa; x < xb; x++) { const e = g[r0 + x] - g[r1 + x + s]; d += e < 0 ? -e : e; }
-      d /= xb - xa;
-      if (d < best) { best = d; bs = s; }
-      if (d > worst) worst = d;
-    }
-    if (worst - best >= 1) { sum += Math.abs(bs); cnt++; }
+// 행 y 와 y+1 의 ±8px 가로 이동 중 평균 절대차 최소인 이동량 |s| (동률이면 작은 |s|). 텍스처 없는 쌍(최대−최소 차 < 1)은 null
+function rowShift(g, w, y) {
+  const R = 8, r0 = y * w, r1 = r0 + w; let best = Infinity, bs = 0, worst = -Infinity;
+  for (let k = 0; k <= 2 * R; k++) {
+    const s = k & 1 ? (k + 1) >> 1 : -(k >> 1), xa = Math.max(0, -s), xb = Math.min(w, w - s);
+    if (xb - xa < 1) continue;
+    let d = 0; for (let x = xa; x < xb; x++) { const e = g[r0 + x] - g[r1 + x + s]; d += e < 0 ? -e : e; }
+    d /= xb - xa;
+    if (d < best) { best = d; bs = s; }
+    if (d > worst) worst = d;
   }
-  return cnt ? sum / cnt : 0;
+  return worst - best >= 1 ? Math.abs(bs) : null;
+}
+// 인접 행 쌍마다 rowShift 의 평균(px), 텍스처 없는 쌍은 제외. 텍스처 있는 쌍이 minRows 개 미만이면 0 (거의 빈 화면의 몇 줄로는 어긋남을 말할 수 없다)
+export function rowJitter(g, w, h, { minRows = 1 } = {}) {
+  let sum = 0, cnt = 0;
+  for (let y = 0; y + 1 < h; y++) { const s = rowShift(g, w, y); if (s != null) { sum += s; cnt++; } }
+  return cnt >= Math.max(1, minRows) ? sum / cnt : 0;
+}
+
+// VHS 트래킹 띠: 행 y−1→y 에서 같은 부호로 step 이상 바뀌는 열의 비율이 가장 큰 행 = 화면 전체를 가로지르는 가로 경계.
+// cover = 그 비율(0~1), y = 그 행, jitter = y ±near 행 쌍 rowShift 평균(px, 텍스처 있는 쌍이 없으면 null — 평평한 바탕 위 선은 띠가 아니다)
+export function trackingBand(g, w, h, { step = 6, near = 4 } = {}) {
+  let cover = 0, by = 0;
+  for (let y = 1; y < h; y++) {
+    let p = 0, m = 0; const r = y * w;
+    for (let x = 0; x < w; x++) { const d = g[r + x] - g[r - w + x]; if (d >= step) p++; else if (d <= -step) m++; }
+    const c = Math.max(p, m) / w; if (c > cover) { cover = c; by = y; }
+  }
+  if (!cover) return { cover: 0, y: 0, jitter: null };
+  let sum = 0, cnt = 0;
+  for (let y = Math.max(0, by - near); y <= Math.min(h - 2, by + near); y++) { const s = rowShift(g, w, y); if (s != null) { sum += s; cnt++; } }
+  return { cover, y: by, jitter: cnt ? sum / cnt : null };
+}
+
+// ── 반지름 스펙트럼 크기비 (Fourier–Mellin 의 크기 부분) ──
+// 화면 전체의 확대·축소는 공간 주파수를 1/s 배로 옮긴다. 파워 스펙트럼은 이동에 무관하므로, 로그 반지름 축의 파워 분포를 서로 밀어 맞추면
+// 블록 매칭이 못 따라가는 큰 확대·축소(평평한 화면 위 글자, 프레임당 10%↑)도 잰다. 내용이 바뀌거나 물체 하나만 커져도 같은 값이 나오므로 corr 와 함께 쓴다.
+const RB = 40, RLO = 0.025, RHI = 0.4, RQ = Math.pow(RHI / RLO, 1 / (RB - 1));   // 칸 수, 반지름 범위(주기/px), 칸 간격(배)
+function fft1(re, im) {
+  const N = re.length;
+  for (let i = 1, j = 0; i < N; i++) { let b = N >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let len = 2; len <= N; len <<= 1) {
+    const a = -2 * Math.PI / len, wr = Math.cos(a), wi = Math.sin(a), hl = len >> 1;
+    for (let i = 0; i < N; i += len) {
+      let cr = 1, ci = 0;
+      for (let j = 0; j < hl; j++) {
+        const p = i + j, q = p + hl, vr = re[q] * cr - im[q] * ci, vi = re[q] * ci + im[q] * cr;
+        re[q] = re[p] - vr; im[q] = im[p] - vi; re[p] += vr; im[p] += vi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+// 프레임 → 로그 반지름 RB 칸의 로그 파워(직선 추세를 뺀 값). 평평한 화면이면 0 배열
+export function radialProfile(g, w, h) {
+  const NX = 1 << Math.ceil(Math.log2(w)), NY = 1 << Math.ceil(Math.log2(h)), re = new Float64Array(NX * NY), im = new Float64Array(NX * NY);
+  let m = 0; for (let i = 0; i < w * h; i++) m += g[i]; m /= w * h;
+  for (let y = 0; y < h; y++) { const wy = 0.5 - 0.5 * Math.cos(2 * Math.PI * (y + 0.5) / h); for (let x = 0; x < w; x++) re[y * NX + x] = (g[y * w + x] - m) * wy * (0.5 - 0.5 * Math.cos(2 * Math.PI * (x + 0.5) / w)); }
+  const rr = new Float64Array(NX), ri = new Float64Array(NX), cr = new Float64Array(NY), ci = new Float64Array(NY);
+  for (let y = 0; y < h; y++) { rr.set(re.subarray(y * NX, y * NX + NX)); ri.fill(0); fft1(rr, ri); re.set(rr, y * NX); im.set(ri, y * NX); }   // 0 으로 채운 행은 변환해도 0
+  const P = new Float64Array(RB), C = new Float64Array(RB);
+  for (let x = 0; x < NX; x++) {
+    for (let y = 0; y < NY; y++) { cr[y] = re[y * NX + x]; ci[y] = im[y * NX + x]; }
+    fft1(cr, ci);
+    const fx = (x < NX / 2 ? x : x - NX) / NX;
+    for (let y = 0; y < NY; y++) {
+      const fy = (y < NY / 2 ? y : y - NY) / NY, r = Math.hypot(fx, fy); if (r < RLO || r > RHI) continue;
+      const b = Math.round(Math.log(r / RLO) / Math.log(RQ)); P[b] += cr[y] * cr[y] + ci[y] * ci[y]; C[b]++;
+    }
+  }
+  if (!P.some(v => v > 1e-6)) return new Float64Array(RB);
+  const L = Array.from(P, (p, i) => Math.log(p / Math.max(C[i], 1) + 1e-6)), xm = (RB - 1) / 2, my = L.reduce((a, b) => a + b, 0) / RB;
+  let sxx = 0, sxy = 0; for (let i = 0; i < RB; i++) { sxx += (i - xm) ** 2; sxy += (i - xm) * (L[i] - my); }
+  return Float64Array.from(L, (v, i) => v - my - sxy / sxx * (i - xm));
+}
+// 두 radialProfile 을 ±maxShift 칸 밀어 정규 상관이 가장 큰 곳(포물선 보간) → { scale(b 가 a 의 몇 배 크기), corr(−1~1) }
+export function profileScale(pa, pb, maxShift = 10) {
+  const N = Math.min(pa.length, pb.length), cs = new Map();
+  for (let j = -maxShift; j <= maxShift; j++) {
+    let s = 0, na = 0, nb = 0, c = 0;
+    for (let u = 0; u < N; u++) { const v = u + j; if (v < 0 || v >= N) continue; s += pa[u] * pb[v]; na += pa[u] * pa[u]; nb += pb[v] * pb[v]; c++; }
+    if (c > N / 2 && na > 1e-9 && nb > 1e-9) cs.set(j, s / Math.sqrt(na * nb));
+  }
+  if (!cs.size) return { scale: 1, corr: 0 };
+  let bj = 0, best = -Infinity; for (const [j, r] of cs) if (r > best || (r === best && Math.abs(j) < Math.abs(bj))) { best = r; bj = j; }
+  const l = cs.get(bj - 1), r = cs.get(bj + 1), den = l != null && r != null ? l - 2 * best + r : 0;
+  const off = den < 0 ? Math.max(-0.5, Math.min(0.5, (l - r) / (2 * den))) : 0;
+  return { scale: +Math.pow(RQ, -(bj + off)).toFixed(4), corr: +best.toFixed(3) };
 }
 
 // 강조색 덩어리: 강조색과 Lab ΔE < 18 인 화소의 4-연결 성분 중 면적 ≥ 0.2%.

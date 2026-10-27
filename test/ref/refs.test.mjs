@@ -1,4 +1,5 @@
 // 실제 레퍼런스 A·B 검증 — 영상은 저장소에 없다. MH2_REF_A / MH2_REF_B 가 있을 때만 실행 (없으면 skip)
+// 시각은 프레임을 직접 보고 확인한 값 (Task 17b, docs/superpowers/acceptance/2026-10-27-acceptance.md "감지기 보정")
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -9,33 +10,41 @@ import { fileURLToPath } from 'url';
 import { DATA } from '../../harness/tools/_common.mjs';
 
 const TOOL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../harness/tools/analyze-ref.mjs');
-function evidenceOf(src, name) {
+function analyze(src, name) {
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'mh2-ref-'));
   fs.mkdirSync(path.join(proj, 'ref'));
   const rel = `ref/${name}${path.extname(src)}`;
   fs.copyFileSync(src, path.join(proj, rel));
   const r = spawnSync(process.execPath, [TOOL, proj, rel], { encoding: 'utf8', cwd: proj });
   assert.equal(r.status, 0, r.stderr);
-  const ev = JSON.parse(fs.readFileSync(path.join(proj, 'work', `ref-${name}`, 'evidence.json'), 'utf8'));
-  for (const c of ev.candidates) assert.ok(fs.existsSync(path.join(proj, 'work', `ref-${name}`, c.strip)), c.strip);
-  return ev.candidates;
+  const out = path.join(proj, 'work', `ref-${name}`), ev = JSON.parse(fs.readFileSync(path.join(out, 'evidence.json'), 'utf8'));
+  for (const c of ev.candidates) assert.ok(fs.existsSync(path.join(out, c.strip)), c.strip);
+  return { cs: ev.candidates, cuts: JSON.parse(fs.readFileSync(path.join(out, 'analysis.json'), 'utf8')).cuts.times };
 }
 // analyze-ref 는 Chromium(playwright, MH_DATA)이 있어야 끝까지 돈다 — 없으면 실패 대신 skip
 const noBrowser = !fs.existsSync(path.join(DATA, 'node_modules', 'playwright', 'index.mjs')) && `playwright 없음 (${DATA})`;
 const skipFor = env => (!process.env[env] && `${env} 없음`) || noBrowser;
-const within = (cs, id, a, b) => cs.some(c => c.id === id && c.t0 >= a && c.t1 <= b);
+// 후보 구간이 실제 효과 구간 [a, b] 와 겹치고, 효과가 들어 있는 샷 [lo, hi] 밖으로 나가지 않는가
+const near = (cs, id, a, b, lo = 0, hi = Infinity) => cs.some(c => c.id === id && c.t0 <= b && c.t1 >= a && c.t0 >= lo && c.t1 <= hi);
 const show = cs => cs.map(c => `${c.id} ${c.t0}–${c.t1}`).join(', ');
+const hasCut = (cuts, t, tol = 0.1) => cuts.some(c => Math.abs(c - t) <= tol);
 
-test('reference B: push, fill, morph, shared', { skip: skipFor('MH2_REF_B') }, () => {
-  const cs = evidenceOf(process.env.MH2_REF_B, 'b');
-  assert.ok(within(cs, 'cam.push', 0, 4), show(cs));
-  assert.ok(within(cs, 'trans.fill', 4, 6.5), show(cs));
-  assert.ok(within(cs, 'morph.shape', 30, 36), show(cs));
-  assert.ok(cs.some(c => c.id === 'trans.shared'), show(cs));
+test('reference B: hard cuts between flat screens; push, fill, morph, shared, dof', { skip: skipFor('MH2_REF_B') }, () => {
+  const { cs, cuts } = analyze(process.env.MH2_REF_B, 'b');
+  for (const t of [7.33, 7.98, 12.93, 13.32, 22.4, 26.93, 28.68]) assert.ok(hasCut(cuts, t), `컷 ${t}s 없음: ${cuts.join(', ')}`);   // ffmpeg scene 0.3 은 0개 (R7)
+  assert.ok(!cuts.some(c => c > 0.1 && c < 6.5), `첫 샷(0–6.7s 줌아웃 원테이크) 안의 컷: ${cuts.join(', ')}`);
+  assert.ok(near(cs, 'cam.push', 0, 3, 0, 6.8), show(cs));          // 할 일 목록에서 글자 벽으로 줌아웃 0–3s
+  assert.ok(near(cs, 'trans.fill', 6.58, 6.75, 6.3, 7.8), show(cs)); // 노란 덩어리가 화면을 채움 ~6.7s
+  assert.ok(near(cs, 'morph.shape', 34.0, 34.25, 33, 35.5), show(cs)); // 눈 → boon 로고 ~34.1s
+  assert.ok(cs.some(c => c.id === 'trans.shared'), show(cs));          // 노란 덩어리가 여러 샷을 잇는다
+  assert.ok(cs.some(c => c.id === 'lens.dof'), show(cs));              // 흐린 글자 배경
 });
 
-test('reference A: depth of field, VHS', { skip: skipFor('MH2_REF_A') }, () => {
-  const cs = evidenceOf(process.env.MH2_REF_A, 'a');
+test('reference A: depth of field, VHS rewinds, long take between cuts', { skip: skipFor('MH2_REF_A') }, () => {
+  const { cs, cuts } = analyze(process.env.MH2_REF_A, 'a');
+  for (const t of [2.07, 16.98]) assert.ok(hasCut(cuts, t), `컷 ${t}s 없음: ${cuts.join(', ')}`);
+  assert.ok(!cuts.some(c => c > 2.3 && c < 11.5), `카메라가 계속 움직이는 2.1–11.6s 안의 컷: ${cuts.join(', ')}`);
   assert.ok(cs.some(c => c.id === 'lens.dof'), show(cs));
-  assert.ok(cs.some(c => c.id === 'fx.vhs'), show(cs));
+  assert.ok(near(cs, 'fx.vhs', 1.17, 2.25, 0, 3), show(cs));     // 일시정지·되감기 1.2–2.2s
+  assert.ok(near(cs, 'fx.vhs', 11.67, 13.0, 10.5, 14), show(cs)); // 되감기 11.7–13.0s
 });

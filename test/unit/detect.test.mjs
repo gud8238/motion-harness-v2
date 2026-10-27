@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { globalMotion, sharpness, directionalBlur, fillRatio, rowJitter, accentBlobs, sigSimilarity } from '../../harness/tools/lib/detect.mjs';
+import { globalMotion, sharpness, directionalBlur, fillRatio, rowJitter, trackingBand, radialProfile, profileScale, accentBlobs, sigSimilarity } from '../../harness/tools/lib/detect.mjs';
 import { pattern, shift, zoom, rotate, blurRegion, hBlur, flood, jitterRows, disk, rect } from '../helpers/frames.mjs';
 
 const w = 160, h = 90, P = pattern(w, h, 1);
@@ -76,6 +76,10 @@ test('directionalBlur: angle is the smear direction', () => {
 });
 test('fillRatio: hex of dominant color', () => { const f = fillRatio(flood(w, h, '#F2C94C', 0.6), w, h); near(f.ratio, 0.6, 0.03, 'ratio'); assert.equal(f.hex.toLowerCase(), '#f2c94c'); });
 test('rowJitter: flat frame → 0', () => { assert.equal(rowJitter(new Uint8Array(w * h).fill(90), w, h), 0); });
+test('rowJitter: a few textured rows on an empty frame → 0 when minRows is set', () => {
+  const f = new Uint8Array(w * h).fill(10), J = jitterRows(P, w, h, 4, 3); for (let y = 40; y < 44; y++) for (let x = 0; x < w; x++) f[y * w + x] = J[y * w + x];
+  assert.ok(rowJitter(f, w, h) > 0.5); assert.equal(rowJitter(f, w, h, { minRows: 9 }), 0);
+});
 test('accentBlobs: centroid, bbox, area, min-area filter', () => {
   const r = accentBlobs(rect(w, h, '#F2C94C', 60, 25, 40, 40), w, h, ['#F2C94C', '#2D9CDB']);
   assert.equal(r.length, 1); const b = r[0];
@@ -87,4 +91,30 @@ test('accentBlobs: centroid, bbox, area, min-area filter', () => {
 test('sigSimilarity is rotation-invariant (cyclic)', () => {
   const a = Float32Array.from({ length: 16 }, (_, i) => i < 4 ? 1 : 0.3), b = Float32Array.from({ length: 16 }, (_, i) => a[(i + 5) % 16]);
   near(sigSimilarity(a, b), 1, 1e-6, 'sim');
+});
+
+// VHS 트래킹 띠: 화면 전체를 가로지르는 가로 경계 + 그 근처 행들의 가로 어긋남
+test('trackingBand: full-width bright band with shifted rows over texture → cover ≈1, row, jitter', () => {
+  const J = jitterRows(P, w, h, 4, 3), o = Uint8Array.from(P);
+  for (let y = 40; y < h; y++) for (let x = 0; x < w; x++) o[y * w + x] = y < 46 ? Math.min(255, J[y * w + x] + 60) : P[y * w + x];
+  const b = trackingBand(o, w, h);
+  assert.ok(b.cover >= 0.95 && (Math.abs(b.y - 40) <= 1 || Math.abs(b.y - 46) <= 1) && b.jitter >= 1, JSON.stringify(b));
+  const p = trackingBand(P, w, h); assert.ok(p.cover < 0.95, JSON.stringify(p));
+});
+test('trackingBand: line on a flat frame has no texture → jitter null; flat frame → cover 0', () => {
+  const f = new Uint8Array(w * h).fill(200); for (let y = 50; y < h; y++) for (let x = 0; x < w; x++) f[y * w + x] = 180;
+  const b = trackingBand(f, w, h); assert.ok(b.cover >= 0.95 && b.jitter === null, JSON.stringify(b));
+  assert.deepEqual(trackingBand(new Uint8Array(w * h).fill(90), w, h), { cover: 0, y: 0, jitter: null });
+});
+
+// 반지름 스펙트럼 크기비 (블록 매칭이 못 따라가는 큰 확대·축소용, 이동에는 둔감)
+test('profileScale: zoom out 0.7× and in 1.3× recovered; shift alone and identical frames → 1', () => {
+  const pr = g => radialProfile(g, w, h), p0 = pr(P);
+  for (const z of [0.7, 1.3]) { const r = profileScale(p0, pr(zoom(P, w, h, z))); assert.ok(Math.abs(Math.log(r.scale / z)) < 0.06 && r.corr > 0.5, `${z}: ${JSON.stringify(r)}`); }
+  const t = profileScale(p0, pr(shift(P, w, h, 9, -5))); assert.ok(Math.abs(Math.log(t.scale)) < 0.04, JSON.stringify(t));
+  const same = profileScale(p0, p0); assert.equal(same.scale, 1); assert.ok(same.corr > 0.99);
+});
+test('profileScale: flat frames → scale 1, corr 0', () => {
+  const z = radialProfile(new Uint8Array(w * h).fill(120), w, h);
+  assert.deepEqual(profileScale(z, z), { scale: 1, corr: 0 });
 });
