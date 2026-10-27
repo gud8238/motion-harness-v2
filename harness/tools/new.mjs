@@ -39,6 +39,7 @@ const libs = [
   [path.join(HARNESS, 'runtime', 'mh.js'), 'mh.js'],
   [path.join(HARNESS, 'runtime', 'mh-rig.js'), 'mh-rig.js'],
   [path.join(HARNESS, 'runtime', 'mh-cam.js'), 'mh-cam.js'],
+  [path.join(HARNESS, 'runtime', 'mh-lens.js'), 'mh-lens.js'],
   [path.join(HARNESS, 'runtime', 'mh-three.js'), 'mh-three.js'],
   [path.join(NM, 'three', 'build', 'three.min.js'), 'three.min.js'],
   [path.join(NM, 'gsap', 'dist', 'gsap.min.js'), 'gsap.min.js'],

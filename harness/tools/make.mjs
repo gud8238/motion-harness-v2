@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { mblurArgs, mblurMixArgs, wantsMotionBlur, rootFps } from './lib/render.mjs';
 import { projectDir, parseArgs, die, hf, hfJSON, hosts, ffmpeg, run, rawFrames, writeJSON, readJSON, HARNESS, ROOT } from './_common.mjs';
 
 const { pos, opt } = parseArgs();
@@ -45,12 +46,20 @@ const gate = spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'gate.mjs'
 if (gate.status !== 0) die('게이트 위반 — 위 안내대로 고친 뒤 다시 실행');
 if (opt.check) process.exit(0);
 
-// 3) 렌더
+// 3) 렌더 (lens.mblur ②③ 행이 있으면 4배 fps 로 렌더한 뒤 4장씩 평균해 원래 fps 로 — 초안은 생략)
 const draft = !!opt.draft, final = path.join(outDir, draft ? 'draft.mp4' : `${name}.mp4`);
+const mblur = !draft && wantsMotionBlur(fs.existsSync(path.join(work, 'PLAN.md')) ? fs.readFileSync(path.join(work, 'PLAN.md'), 'utf8') : '');
+const base = mblur ? rootFps(fs.readFileSync(path.join(sceneDir, 'index.html'), 'utf8')) : 30, tmp = path.join(work, 'mblur-tmp.mp4');
+if (mblur) console.log('· 모션 블러: 렌더 시간 약 4배');
 console.log(`렌더 중… (${draft ? '초안 15fps' : '최종'})`);
-const args = ['render', sceneDir, '-o', final, '--quiet', ...(draft ? ['--quality', 'draft', '--fps', '15'] : ['--quality', 'looks'])];
+const args = ['render', sceneDir, '-o', mblur ? tmp : final, '--quiet', ...(draft ? ['--quality', 'draft', '--fps', '15'] : ['--quality', 'looks', ...(mblur ? ['--fps', String(mblurArgs(base).fps)] : [])])];
 const r = hf(args);   // 로그는 Claude 가 읽지 않도록 숨기고, 실패할 때만 끝부분을 보여준다
-if (r.status !== 0 || !fs.existsSync(final)) { console.error(String((r.stderr || '') + (r.stdout || '')).split('\n').filter(l => !/GPU stall|GL Driver|deprecated with r150/.test(l)).slice(-25).join('\n')); die('렌더 실패 (위 로그)'); }
+if (r.status !== 0 || !fs.existsSync(mblur ? tmp : final)) { fs.rmSync(tmp, { force: true }); console.error(String((r.stderr || '') + (r.stdout || '')).split('\n').filter(l => !/GPU stall|GL Driver|deprecated with r150/.test(l)).slice(-25).join('\n')); die('렌더 실패 (위 로그)'); }
+if (mblur) {
+  const mix = ffmpeg(mblurMixArgs(tmp, final, base), { allowFail: true });
+  fs.rmSync(tmp, { force: true });
+  if (mix.status !== 0 || !fs.existsSync(final)) { console.error(String(mix.stderr || '').slice(-800)); die('모션 블러 합성 실패 (위 로그)'); }
+}
 console.log(`  렌더 완료 ${sec()}`);
 
 // 4) 검수
