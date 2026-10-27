@@ -12,8 +12,11 @@ function parseEvidence(cell) {
   const s = cell.replace(/\s+/g, ' ').trim();
   if (/^사용자 ?지정$/.test(s)) return { user: true };
   const m = EVIDENCE.exec(s);
-  if (!m || !m[4]) return { invalid: cell.trim() };
-  return { ref: m[1], t0: parseFloat(m[2]), t1: parseFloat(m[3]), img: m[4] };
+  const raw = cell.trim() || '(비어 있음)';                        // invalid 는 항상 비어 있지 않은 문자열
+  if (!m || !m[4]) return { invalid: raw };
+  const t0 = parseFloat(m[2]), t1 = parseFloat(m[3]);
+  if (!(t1 > t0)) return { invalid: raw };                        // 역순·길이 0 구간
+  return { ref: m[1], t0, t1, img: m[4] };
 }
 
 function parseTier(cell) {
@@ -44,12 +47,12 @@ export function parseEffectTable(md) {
 // brief.md 의 "## 효과 지정" 절 본문(다음 "## " 전까지)의 비어 있지 않은 줄을 "- " 제거 후 반환한다.
 export function parseBriefEffects(md) {
   const lines = String(md).split(/\r?\n/);
-  const s = lines.findIndex(l => /^##\s+효과 지정\s*$/.test(l));
+  const s = lines.findIndex(l => /^##\s+효과 지정(?:[\s(]|$)/.test(l));
   if (s < 0) return [];
   const out = [];
   for (let i = s + 1; i < lines.length && !/^##\s/.test(lines[i]); i++) {
     const t = lines[i].replace(/^[\s-]+/, '').trim();
-    if (t) out.push(t);
+    if (t && !/^\(.*\)$/.test(t)) out.push(t);                    // 템플릿 안내문 "(예: ...)" 제외
   }
   return out;
 }
@@ -57,7 +60,7 @@ export function parseBriefEffects(md) {
 // 장면 파일의 <script type="application/json" id="<id>-beats"> JSON → 비트 배열. 없거나 깨졌으면 [].
 export function readBeats(html, id) {
   const esc = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = new RegExp(`<script\\b[^>]*\\bid=["']${esc}-beats["'][^>]*>([\\s\\S]*?)</script>`, 'i').exec(String(html));
+  const m = new RegExp(`<script\\b[^>]*?(?:^|\\s)id=["']${esc}-beats["'][^>]*>([\\s\\S]*?)</script>`, 'i').exec(String(html));
   if (!m) return [];
   try {
     const a = JSON.parse(m[1]);

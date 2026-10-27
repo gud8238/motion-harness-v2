@@ -72,3 +72,24 @@ test('resolveWhere', () => {
   assert.deepEqual(resolveWhere('s9, st1 b7, 전체, st1 b3', hosts, beats), [[8, 11]]);
   assert.deepEqual(resolveWhere('', hosts, beats), []);
 });
+test('reversed or zero-length range is invalid', () => {
+  const ev = c => parseEffectTable(`효과 표\n| a | b | c | d |\n|---|---|---|---|\n| e | ② | ${c} | s1 |`)[0].evidence;
+  assert.equal(ev('b 4.5-0 (x.png)').invalid, 'b 4.5-0 (x.png)');
+  assert.equal(ev('b 3-3 (x.png)').invalid, 'b 3-3 (x.png)');
+  assert.deepEqual(ev('b 3-3.5 (x.png)'), { ref: 'b', t0: 3, t1: 3.5, img: 'x.png' });
+});
+test('empty or missing evidence cell gives non-empty invalid', () => {
+  const rows = parseEffectTable('효과 표\n| a | b | c | d |\n|---|---|---|---|\n| e | ② |  | s1 |\n| f | ② |');
+  assert.equal(rows.length, 2);
+  for (const r of rows) { assert.equal(typeof r.evidence.invalid, 'string'); assert.ok(r.evidence.invalid); }
+});
+test('brief heading with annotation, placeholder lines skipped', () => {
+  const md = '## 효과 지정 (선택 — 레퍼런스에 없어도 넣고 싶은 효과)\n(예: VHS 화면, 화면 채움 전환)\n- VHS\n\n## 끝';
+  assert.deepEqual(parseBriefEffects(md), ['VHS']);
+  assert.deepEqual(parseBriefEffects('## 효과 지정\n- (예: x)\n- fx.vhs'), ['fx.vhs']);
+  assert.deepEqual(parseBriefEffects('## 효과 지정자\n- x'), []);
+});
+test('readBeats ignores data-id', () => {
+  assert.deepEqual(readBeats('<script type="application/json" data-id="st1-beats">[{"id":"b1","t0":0,"t1":4}]</script>', 'st1'), []);
+  assert.deepEqual(readBeats('<script id="st1-beats" type="application/json">[{"id":"b1","t0":0,"t1":4}]</script>', 'st1').length, 1);
+});
