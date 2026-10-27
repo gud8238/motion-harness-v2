@@ -23,12 +23,13 @@ const near = (v, t, tol, msg) => assert.ok(Math.abs(v - t) < tol, `${msg}: ${v} 
 test('globalMotion: sub-pixel shift', () => { const m = globalMotion(P, shift(P, w, h, 2.3, 1.6), w, h); near(m.dx, 2.3, 0.3, 'dx'); near(m.dy, 1.6, 0.3, 'dy'); });
 test('globalMotion: identity result shape on static frames', () => {
   const m = globalMotion(P, P, w, h);
-  assert.deepEqual(Object.keys(m).sort(), ['dx', 'dy', 'parallax', 'res', 'rot', 'scale']);
+  assert.deepEqual(Object.keys(m).sort(), ['dx', 'dy', 'n', 'parallax', 'res', 'rot', 'scale']); assert.equal(m.n, 48);
   near(m.rot, 0, 0.05, 'rot'); near(m.res, 0, 0.05, 'res'); near(m.parallax, 0, 0.05, 'parallax');
 });
 test('globalMotion: flat frames → identity', () => {
   const z = new Uint8Array(w * h).fill(128);
-  assert.deepEqual(globalMotion(z, z, w, h), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0 });
+  const m = globalMotion(z, z, w, h);
+  assert.deepEqual(m, { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0 }); assert.equal(m.n, 0);
 });
 test('globalMotion: rotation sign is clockwise-positive (y down)', () => { const m = globalMotion(P, rotate(P, w, h, 2), w, h); near(m.rot, 2, 0.4, 'rot'); near(m.scale, 1, 0.02, 'scale'); });
 test('globalMotion: zoom keeps center fixed', () => { const m = globalMotion(P, zoom(P, w, h, 0.95), w, h); near(m.scale, 0.95, 0.02, 'scale'); near(m.dx, 0, 0.3, 'dx'); near(m.dy, 0, 0.3, 'dy'); });
@@ -44,13 +45,24 @@ test('globalMotion: portrait 9:16 frames', () => {
 });
 test('globalMotion: tiny frames do not throw', () => {
   const t = pattern(16, 9, 2);
-  assert.deepEqual(globalMotion(t, t, 16, 9), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0 });
+  assert.deepEqual(globalMotion(t, t, 16, 9), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0 });
 });
-test('globalMotion: fast enough for 480 pairs', () => {
-  const b = zoom(P, w, h, 1.03), n = 60, t0 = performance.now();
-  for (let i = 0; i < n; i++) globalMotion(P, b, w, h);
-  const ms = (performance.now() - t0) / n;
-  assert.ok(ms < 10, `${ms.toFixed(2)} ms/호출`);
+test('globalMotion: < 5 ms per default-range call (median of 20)', () => {
+  const b = zoom(P, w, h, 1.03), t = [];
+  for (let i = 0; i < 5; i++) globalMotion(P, b, w, h);
+  for (let i = 0; i < 20; i++) { const t0 = performance.now(); globalMotion(P, b, w, h); t.push(performance.now() - t0); }
+  const ms = t.sort((x, y) => x - y)[10];
+  assert.ok(ms < 5, `${ms.toFixed(2)} ms/호출`);
+});
+test('globalMotion: slow pan is not snapped to integers', () => { const m = globalMotion(P, shift(P, w, h, 0.3, 0), w, h); assert.ok(m.dx >= 0.2, `dx ${m.dx}`); });
+test('globalMotion: range option (whip pans)', () => {
+  const b = shift(P, w, h, 8, 0);
+  near(globalMotion(P, b, w, h, { range: 12 }).dx, 8, 0.3, 'range 12 dx');
+  const d = globalMotion(P, b, w, h).dx; assert.ok(d <= 6.2, `기본 범위는 포화: ${d}`);
+});
+test('globalMotion: static overlay strip does not drag the pan', () => {
+  const b = shift(P, w, h, 3, 0); b.set(P.subarray(w * (h - 12)), w * (h - 12));
+  const m = globalMotion(P, b, w, h); near(m.dx, 3, 0.3, 'dx'); near(m.scale, 1, 0.01, 'scale');
 });
 test('sharpness: grid shape and row-major order', () => {
   const s = sharpness(blurRegion(P, w, h, [0, 0, w / 2, h], 4), w, h, [2, 1]);

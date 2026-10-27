@@ -3,11 +3,11 @@
 // 각도 규약: 도 단위, 0° = +x(오른쪽), 양수 = 화면에서 시계 방향(y 아래이므로 +y 쪽으로 도는 방향).
 import { toLab, dE, hex as toHex } from '../_common.mjs';
 
-const ID = () => ({ dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0 });
-const GX = 8, GY = 6, M = 6, TEX = 2;   // 격자, 탐색 반경(px), 텍스처 판정(화소당 SAD 최소·최대 차)
+const ID = () => ({ dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0 });
+const GX = 8, GY = 6, TEX = 2, RMAX = 12;   // 격자, 텍스처 판정(화소당 SAD 최소·최대 차), 탐색 반경 상한(px)
 
-// 블록 하나의 ±M 정수 SAD 표 → 최소점 + 포물선 보간 이동. 텍스처 없으면 null
-function matchBlock(a, b, w, x0, y0, x1, y1) {
+// 블록 하나의 ±M 정수 SAD 표 → 최소점 + 등각(V자) 보간 이동. 텍스처 없으면 null
+function matchBlock(a, b, w, x0, y0, x1, y1, M) {
   const S = 2 * M + 1, sad = new Float64Array(S * S), n = (x1 - x0) * (y1 - y0);
   let mn = Infinity, mx = -Infinity, bi = 0;
   for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
@@ -19,37 +19,48 @@ function matchBlock(a, b, w, x0, y0, x1, y1) {
   }
   if ((mx - mn) / n < TEX) return null;
   const bx = bi % S, by = bi / S | 0;
-  const para = (l, c, r) => { const den = l - 2 * c + r; return den > 0 ? Math.max(-0.5, Math.min(0.5, (l - r) / (2 * den))) : 0; };
-  const fx = bx > 0 && bx < S - 1 ? para(sad[bi - 1], mn, sad[bi + 1]) : 0;
-  const fy = by > 0 && by < S - 1 ? para(sad[bi - S], mn, sad[bi + S]) : 0;
+  // SAD 는 최소점 근처에서 V자 → 등각 보간 (l = −1, r = +1 쪽 SAD)
+  const vfit = (l, c, r) => { const m = Math.max(l, r) - c; return m > 0 ? Math.max(-0.5, Math.min(0.5, (l - r) / (2 * m))) : 0; };
+  const fx = bx > 0 && bx < S - 1 ? vfit(sad[bi - 1], mn, sad[bi + 1]) : 0;
+  const fy = by > 0 && by < S - 1 ? vfit(sad[bi - S], mn, sad[bi + S]) : 0;
   return [bx - M + fx, by - M + fy];
 }
 
-// 전역 카메라 움직임: a 의 내용이 b 에서 p_b = s·R(rot)·(p_a − c) + c + (dx, dy) 로 옮겨졌다고 보고 적합 (c = 화면 중심).
-// parallax = 위 절반·아래 절반 블록 잔차 평균 이동 차의 크기(px), res = 블록 잔차 평균(px). 유효 블록 < 6 → 정지(항등).
-export function globalMotion(a, b, w, h) {
-  const bw = Math.floor(w / GX), bh = Math.floor(h / GY), cx = (w - 1) / 2, cy = (h - 1) / 2, P = [];
-  for (let r = 0; r < GY; r++) for (let c = 0; c < GX; c++) {
-    const x0 = Math.max(c * bw, M), x1 = Math.min(c * bw + bw, w - M), y0 = Math.max(r * bh, M), y1 = Math.min(r * bh + bh, h - M);
-    if (x1 - x0 < 4 || y1 - y0 < 3) continue;
-    const v = matchBlock(a, b, w, x0, y0, x1, y1);
-    if (v) P.push({ u: (x0 + x1 - 1) / 2 - cx, v: (y0 + y1 - 1) / 2 - cy, vx: v[0], vy: v[1], top: r < GY / 2 });
-  }
-  if (P.length < 6) return ID();
-  // X = A·u − B·v + tx, Y = B·u + A·v + ty (X,Y = 옮겨진 위치 − c), A = s·cosθ, B = s·sinθ — 무게중심 정리 후 닫힌 해
+// 유사 변환 최소제곱: X = A·u − B·v + tx, Y = B·u + A·v + ty (X,Y = 옮겨진 위치 − c), A = s·cosθ, B = s·sinθ — 무게중심 정리 후 닫힌 해
+function fitSim(P) {
   let su = 0, sv = 0, sX = 0, sY = 0; const n = P.length;
   for (const p of P) { su += p.u; sv += p.v; sX += p.u + p.vx; sY += p.v + p.vy; }
   su /= n; sv /= n; sX /= n; sY /= n;
   let num1 = 0, num2 = 0, den = 0;
   for (const p of P) { const u = p.u - su, v = p.v - sv, X = p.u + p.vx - sX, Y = p.v + p.vy - sY; num1 += u * X + v * Y; num2 += u * Y - v * X; den += u * u + v * v; }
-  const A = den ? num1 / den : 1, B = den ? num2 / den : 0, tx = sX - A * su + B * sv, ty = sY - B * su - A * sv;
-  let res = 0; const half = { t: [0, 0, 0], b: [0, 0, 0] };
-  for (const p of P) {
-    const ex = p.u + p.vx - (A * p.u - B * p.v + tx), ey = p.v + p.vy - (B * p.u + A * p.v + ty), q = p.top ? half.t : half.b;
-    res += Math.hypot(ex, ey); q[0] += ex; q[1] += ey; q[2]++;
+  const A = den ? num1 / den : 1, B = den ? num2 / den : 0;
+  return { A, B, tx: sX - A * su + B * sv, ty: sY - B * su - A * sv };
+}
+const resid = (p, f) => [p.u + p.vx - (f.A * p.u - f.B * p.v + f.tx), p.v + p.vy - (f.B * p.u + f.A * p.v + f.ty)];
+
+// 전역 카메라 움직임: a 의 내용이 b 에서 p_b = s·R(rot)·(p_a − c) + c + (dx, dy) 로 옮겨졌다고 보고 적합 (c = 화면 중심).
+// opts.range = 블록 탐색 반경 px (기본 6, 1~12 로 제한). 이보다 큰 프레임 간 이동은 약 range 로 포화된다.
+// 적합: 전체 최소제곱 → 잔차 큰 25% 블록을 빼고 한 번 더 적합(자막·로고 같은 고정 요소 배제).
+// parallax = 위 절반·아래 절반 블록 잔차 평균 이동 차의 크기(px), res = 블록 잔차 평균(px) — 둘 다 모든 유효 블록을 최종 적합에 대해 계산.
+// n = 유효(텍스처 있는) 블록 수. n < 6 이면 측정 불가 → 항등 결과 + n: 0 (정지와 구분하려면 n 을 볼 것).
+export function globalMotion(a, b, w, h, opts = {}) {
+  const M = Math.max(1, Math.min(RMAX, Math.round(opts.range ?? 6)));
+  const bw = Math.floor(w / GX), bh = Math.floor(h / GY), cx = (w - 1) / 2, cy = (h - 1) / 2, P = [];
+  for (let r = 0; r < GY; r++) for (let c = 0; c < GX; c++) {
+    const x0 = Math.max(c * bw, M), x1 = Math.min(c * bw + bw, w - M), y0 = Math.max(r * bh, M), y1 = Math.min(r * bh + bh, h - M);
+    if (x1 - x0 < 4 || y1 - y0 < 3) continue;
+    const v = matchBlock(a, b, w, x0, y0, x1, y1, M);
+    if (v) P.push({ u: (x0 + x1 - 1) / 2 - cx, v: (y0 + y1 - 1) / 2 - cy, vx: v[0], vy: v[1], top: r < GY / 2 });
   }
+  const n = P.length;
+  if (n < 6) return ID();
+  let f = fitSim(P);
+  const keep = Math.max(6, Math.ceil(n * 0.75));
+  if (keep < n) f = fitSim(P.map(p => [Math.hypot(...resid(p, f)), p]).sort((x, y) => x[0] - y[0]).slice(0, keep).map(x => x[1]));
+  let res = 0; const half = { t: [0, 0, 0], b: [0, 0, 0] };
+  for (const p of P) { const [ex, ey] = resid(p, f), q = p.top ? half.t : half.b; res += Math.hypot(ex, ey); q[0] += ex; q[1] += ey; q[2]++; }
   const parallax = half.t[2] && half.b[2] ? Math.hypot(half.t[0] / half.t[2] - half.b[0] / half.b[2], half.t[1] / half.t[2] - half.b[1] / half.b[2]) : 0;
-  return { dx: tx, dy: ty, scale: Math.hypot(A, B), rot: Math.atan2(B, A) * 180 / Math.PI, parallax, res: res / n };
+  return { dx: f.tx, dy: f.ty, scale: Math.hypot(f.A, f.B), rot: Math.atan2(f.B, f.A) * 180 / Math.PI, parallax, res: res / n, n };
 }
 
 // 칸별 4-이웃 라플라시안 분산. 순서 = 행 우선(index = row·gx + col)
