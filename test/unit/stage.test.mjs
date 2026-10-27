@@ -245,6 +245,33 @@ test('grow under an offset zoomed camera heads straight to the screen centre (R1
   near(path.at(-1)[0], 500, 1e-6); near(path.at(-1)[1], 250, 1e-6);
   assert.deepEqual(matOf(g.attrs.transform), [1, 0, 0, 1, 0, 0]);
 });
+const maxJump = (st, A, g, ts) => {   // 경계 t 마다 [t − 2/120, t + 2/120] 에서 1/120초 간 중심 이동 최댓값
+  const cen = t => { st.render(t); const p = A.pose(t); return centreOf(matOf(g.attrs.transform), [p.x, p.y]); };
+  let m = 0;
+  for (const tb of ts) for (let k = -2; k < 2; k++) { const a = cen(tb + k / 120), b = cen(tb + (k + 1) / 120); m = Math.max(m, Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  return m;
+};
+test('chained transitions start from the displayed centre: grow then anchor→world (no teleport)', () => {
+  const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
+  st.actor('boo', DESIGN, { life: false, x: 2930, y: 270 }).cues([[0, 'cam', { x: 2900, y: 250, zoom: 3 }], [2, 'boo', 'grow'], [2.5, 'boo', 'anchor', { to: 'world' }]]);
+  const j = maxJump(st, st.actors.boo, st.actorTarget('boo'), [2, 2.5]);
+  assert.ok(j <= 20, `jump ${j}px`);
+});
+test('chained transitions: grow, hop on screen, grow again (no teleport)', () => {
+  const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
+  st.actor('boo', DESIGN, { life: false, x: 2930, y: 270 }).cues([[0, 'cam', { x: 2900, y: 250, zoom: 3 }], [2, 'boo', 'grow'], [4, 'boo', 'hop', { to: [300, 300] }], [6, 'boo', 'grow']]);
+  const A = st.actors.boo, g = st.actorTarget('boo');
+  assert.ok(maxJump(st, A, g, [2, 4, 6]) <= 20);
+  st.render(5.9); const p = A.pose(5.9), c = centreOf(matOf(g.attrs.transform), [p.x, p.y]); near(c[0], 300, 1e-6); near(c[1], 300, 1e-6);   // 화면에 붙은 채 깡충
+  st.render(9); assert.deepEqual(matOf(g.attrs.transform), [1, 0, 0, 1, 0, 0]); near(A.pose(9).x, 500, 1e-9);
+});
+test('render falls back to pose() when actor.render returns nothing', () => {
+  const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
+  const real = M.rig.actor(st.actorTarget('x'), DESIGN, { W: 1000, H: 500, life: false });
+  const A = { act: l => (real.act(l), A), pose: t => real.pose(t), render: t => { real.render(t); } };
+  st.actor('x', A).cues([[0, 'cam', { x: 600, zoom: 2 }], [0, 'x', 'hop', { to: [100, 0] }]]);
+  st.render(1); assert.match(st.actorTarget('x').attrs.transform, /^matrix\(2 0 0 2 -700 -250\)$/);
+});
 test('anchor back to world: from the frozen screen point to the live world point', () => {
   const { MH: M, doc } = load(); const { st } = mkStage(M, doc);
   st.actor('boo', DESIGN, { life: false, x: 500, y: 250 }).cues([[0, 'cam', { x: 800, y: 250, zoom: 2 }], [0, 'boo', 'grow', { dur: 0.5 }], [2, 'boo', 'anchor', { to: 'world', dur: 0.4 }]]);

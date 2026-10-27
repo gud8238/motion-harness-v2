@@ -6,9 +6,9 @@
  *   st.beats(json) / st.beatsFrom('#id-beats') · st.remap(fn) · st.render(t) · st.cam · st.world
  * 쌓는 순서(R15): 깊이 레이어는 깊이 오름차순(1 미만 = 월드 뒤, 1 초과 = 월드 앞) → 배우 오버레이 → 깊이 0 레이어(화면 고정 HUD, 맨 위).
  * 배우 위치(R16): a = anchor 'screen' 이면 1, 'world' 면 pose.anchor (grow 가 0→1). 래퍼 선형부 L = lerp(카메라 2×2, I, a).
- *   배우 중심의 화면 위치 = (1−e)·출발 틀(전환 시작 시각 t_s 의 자세 위치, 고정) + e·도착 틀(자세 위치), e = 도착 쪽 진행도.
- *   grow·anchor{to:'screen'}: 월드 → 화면, e = a, 도착 위치는 grow 의 이동·안착이 끝날 때(t_s + dur + settle)까지 그 끝값으로 고정 → 화면 중심으로 곧게 들어간다.
- *   anchor{to:'world'}: 화면 → 월드, e = 1 − a. 전환 큐가 없으면 a 는 상수 (0 = 카메라 그대로, 1 = 항등).
+ *   배우 중심의 화면 위치 = (1−e)·출발(전환 시작 t_s 에 실제로 보이던 중심, 앞 전환들로 재귀) + e·도착, e = 큐 자체 시간 진행(예비동작·지나침 없음).
+ *   grow·anchor{to:'screen'}: 도착 = 화면 점, grow 는 이동·안착이 끝날 때(t_s + dur + settle)까지 그 끝값으로 고정 → 화면 중심으로 곧게 들어간다.
+ *   anchor{to:'world'}: 도착 = M·자세 위치(살아 있음). 전환 큐가 없으면 a 는 상수 (0 = 카메라 그대로, 1 = 항등). 이어진 전환도 순간이동 없음.
  * render(t) 는 tt = remap(t) 의 순수 함수: cam → 세트 → 배우. 캐시는 DOM 쓰기 생략용뿐. */
 (function () {
 'use strict';
@@ -71,16 +71,15 @@ function setState(list, tt, W, H) {
   return { show: true, dx: go('dx'), dy: go('dy'), s: go('s'), op: lerp(a.op, b.op, p) };
 }
 
-// 마지막 위치 전환 큐(grow · anchor) ≤ tt → { t, screen, tm } (tm = 도착 위치를 고정하는 끝 시각)
-function transitionAt(list, tt) {
-  let tr = null;
+// 위치 전환 큐(grow · anchor) 목록 → [{ t, screen, dur, tm }] (tm = 도착 위치를 고정하는 끝 시각: grow 는 이동·안착 끝)
+function transitions(list) {
+  const out = [];
   for (const [t, action, op] of list || []) {
-    if (t > tt) break;
     const o = op && typeof op === 'object' ? op : {};
-    if (action === 'grow') { const settle = o.settle ?? MH.motion().settle; tr = { t, screen: true, tm: t + (o.dur ?? 0.8) + Math.max(0, settle) }; }
-    else if (action === 'anchor') tr = { t, screen: o.to === 'screen', tm: t };
+    if (action === 'grow') { const dur = o.dur ?? 0.8, settle = o.settle ?? MH.motion().settle; out.push({ t, screen: true, dur, tm: t + dur + Math.max(0, settle) }); }
+    else if (action === 'anchor') out.push({ t, screen: o.to === 'screen', dur: o.dur ?? 0.4, tm: t });
   }
-  return tr;
+  return out;
 }
 
 // ───────────── 무대 ─────────────
@@ -174,27 +173,39 @@ function stage2d(rootEl, o = {}) {
       for (const n of Object.keys(C.actors)) if (!actors[n] && !wraps[n]) warnOnce('actor:' + n, `MH.stage2d: 큐의 배우 '${n}' 가 등록되지 않았습니다 — st.actor('${n}', …) (비동기면 먼저 st.actorTarget('${n}')).`);
       const M = cam.matrix(tt, 1);
       for (const [name, A] of Object.entries(actors)) {
-        const p = A.render(tt), P = [p.x, p.y];
-        attr(wraps[name], 'transform', `matrix(${wrapMatrix(M, A, P, anchors[name] ? 1 : clamp(fin(p.anchor) ? p.anchor : 0), anchors[name] ? null : transitionAt(C.actors[name], tt), tt).map(fmt).join(' ')})`);
+        const p = A.render(tt) || A.pose(tt), P = [p.x, p.y];   // render 가 자세를 돌려주지 않는 배우도 허용
+        const m = anchors[name] ? [1, 0, 0, 1, 0, 0] : wrapMatrix(M, A, P, clamp(fin(p.anchor) ? p.anchor : 0), transitions(C.actors[name]), tt);
+        attr(wraps[name], 'transform', `matrix(${m.map(fmt).join(' ')})`);
       }
       return st;
     },
   };
   return st;
 }
-// 배우 래퍼 행렬 (R16, 위 머리말). M = 카메라 깊이 1 아핀 [a,b,c,d,e,f], P = 지금 자세 위치, a = 화면 쪽 정도
-function wrapMatrix(M, A, P, a, tr, tt) {
-  const W = q => [M[0] * q[0] + M[2] * q[1] + M[4], M[1] * q[0] + M[3] * q[1] + M[5]];
-  const mix = (x, y, e) => (e <= 0 ? x : e >= 1 ? y : [lerp(x[0], y[0], e), lerp(x[1], y[1], e)]);
-  const at = t => { const q = A.pose(t); return [q.x, q.y]; };
-  let c;
-  if (a <= 0 && (!tr || !tr.screen || tt <= tr.t)) c = W(P);                 // 월드: 카메라 그대로
-  else if (a >= 1 && (!tr || (tr.screen && tt >= tr.tm))) c = P;              // 화면: 항등
-  else if (!tr) c = mix(W(P), P, a);
-  else if (tr.screen) c = mix(W(at(tr.t)), tt < tr.tm ? at(tr.tm) : P, a);    // 월드 → 화면 (출발 고정, 도착은 안착 끝값)
-  else c = mix(at(tr.t), W(P), 1 - a);                                        // 화면 → 월드
+// 배우 래퍼 행렬 (R16, 위 머리말). M = 카메라 깊이 1 아핀 [a,b,c,d,e,f], P = 지금 자세 위치, a = 화면 쪽 정도(pose.anchor), trs = 전환 큐
+// 선형부 L = lerp(카메라 2×2, I, a). 이동부는 배우 중심이 centreAt(…)(M) 에 오도록.
+function wrapMatrix(M, A, P, a, trs, tt) {
+  const c = centreAt(A, trs, trs.length, tt)(M);
   const L = [lerp(M[0], 1, a), lerp(M[1], 0, a), lerp(M[2], 0, a), lerp(M[3], 1, a)];
   return [L[0], L[1], L[2], L[3], c[0] - (L[0] * P[0] + L[2] * P[1]), c[1] - (L[1] * P[0] + L[3] * P[1])];
+}
+// 시각 t 에 실제로 보이는 배우 중심 = 카메라 M 을 받는 함수 (월드 쪽 점은 지금 카메라로 따라간다). 앞 n 개의 전환 큐만 본다.
+//   전환이 없으면 a = pose.anchor 로 (0 = M·P, 1 = P). 전환 중이면 출발 = 전환 시작 시각에 보이던 중심(앞 전환들로 재귀),
+//   도착 = 화면(grow: 안착 끝 자세로 고정) 또는 월드(M·P, 살아 있음), 진행 e = 큐 자체 시간 진행(MH.move, 예비동작·지나침 없음).
+function centreAt(A, trs, n, t) {
+  const aff = (M, q) => [M[0] * q[0] + M[2] * q[1] + M[4], M[1] * q[0] + M[3] * q[1] + M[5]];
+  const mix = (x, y, e) => (e <= 0 ? x : e >= 1 ? y : [lerp(x[0], y[0], e), lerp(x[1], y[1], e)]);
+  let j = -1;
+  for (let i = 0; i < n; i++) if (trs[i].t <= t) j = i; else break;
+  const p = A.pose(t), P = [p.x, p.y];
+  if (j < 0) { const a = clamp(fin(p.anchor) ? p.anchor : 0); return M => mix(aff(M, P), P, a); }
+  const tr = trs[j], e = move(t, tr.t, 0, 1, { dur: tr.dur, ant: 0, over: 0, settle: 0 }), start = centreAt(A, trs, j, tr.t);
+  if (tr.screen) {
+    if (e >= 1 && t >= tr.tm) return () => P;                                      // 화면: 항등
+    const q = A.pose(tr.tm), T = t < tr.tm ? [q.x, q.y] : P;
+    return M => mix(start(M), T, e);
+  }
+  return M => mix(start(M), aff(M, P), e);                                          // 화면 → 월드 (끝나면 M·P)
 }
 stage2d.compile = compile;
 

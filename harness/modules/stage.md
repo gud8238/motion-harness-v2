@@ -5,10 +5,10 @@
 | 구성 | 역할 |
 |---|---|
 | 월드 `st.world` | 화면보다 큰 DOM, 깊이 1 |
-| 세트 | 월드 안 내용 묶음, 큐로 in/out |
+| 세트 | 월드 안 묶음, 큐로 in/out |
 | 카메라 `st.cam` | MH.cam. dur 0 키 = 하드컷 |
 | 배우 | MH.rig, 월드↔화면 anchor |
-| 비트 | 스토리보드 한 칸 = PLAN 표 한 행 |
+| 비트 | 스토리보드 한 칸 = PLAN 한 행 |
 
 ## 큐시트
 ```js
@@ -26,16 +26,16 @@ st.cues([
 ]);
 MH.drive(tl, DUR, t => st.render(t));
 ```
-같은 시각은 적은 순. 자리도 배우도 없는 이름은 렌더 때 경고(무대마다 한 번).
+같은 시각은 적은 순. 자리도 배우도 없는 이름은 렌더 때 경고(무대별 1회).
 
 ## 세트
-`'in'|'out'`, `{dur=0.5, from: below|above|left|right|fade|scale}` (out 은 `to` 도 됨). 위치 ±0.15·H/W·배율 0.6↔1 은 MH.move, 투명도는 선형. 첫 큐가 in 이면 그 전엔 숨김, out 이 끝나면 숨김. 도중에 반대 큐가 오면 그 순간 상태에서 출발. 세트 transform 은 무대 몫 → 세트 안 GSAP 은 안쪽 자식에. 쌓기: 깊이 오름차순(<1 월드 뒤, >1 앞) → 배우 → depth 0(화면 고정 HUD, 맨 위).
+`'in'|'out'`, `{dur=0.5, from: below|above|left|right|fade|scale}` (out 은 `to` 도). 위치 ±0.15·H/W·배율 0.6↔1 은 MH.move, 투명도는 선형. 첫 큐가 in 이면 그 전엔 숨김, out 이 끝나면 숨김. 도중에 반대 큐가 오면 그 순간 상태에서 출발. 세트 transform 은 무대 몫 → 세트 안 GSAP 은 안쪽 자식에. 쌓기: 깊이 오름차순(<1 월드 뒤, >1 앞) → 배우 → depth 0(화면 고정 HUD, 맨 위).
 
 ## 배우
 `st.actor('boo', design, {anchor, seed, life})` 또는 두 단계 `g = st.actorTarget('boo'); st.actor('boo', MH.rig.actor(g, design, {W, H}))`.
 
-anchor: `'world'` 면 a = pose.anchor(grow·anchor 동작), `'screen'` 이면 a = 1. 배우 좌표는 a=0 월드 px, a=1 화면 px. 전환 중엔 위치를 섞는다(R16): 크기·회전 = 카메라↔항등, 중심 = 출발 점(전환 시작에 고정)→도착 점, grow 는 화면 중심으로 곧게. `anchor {to:'world'}` 는 자세 숫자를 월드 점으로 읽는다(먼저 그 근처로 옮길 것).
-배우 파일 `scene/assets/actors/<이름>.json` → `buildReady[...] = MH.rig.load('<이름>').then(d => st.actor('boo', d))` (실패 시 기본 디자인).
+anchor: `'world'` 면 a = pose.anchor(grow·anchor 동작), `'screen'` 이면 a = 1. 배우 좌표는 a=0 월드 px, a=1 화면 px. 전환 중엔 위치를 섞는다(R16): 크기·회전 = 카메라↔항등, 중심 = 출발 점(전환 시작에 고정)→도착 점, grow 는 화면 중심으로 곧게. `anchor {to:'world'}` 는 자세 숫자를 월드 점으로 읽는다(먼저 그 근처로 옮길 것). grow 중엔 hop/walk 를 넣지 않는다.
+배우 파일 `scene/assets/actors/<이름>.json` → `buildReady[...] = MH.rig.load('<이름>').then(d => st.actor('boo', d))` (실패→기본 디자인).
 
 ## 비트
 ```html
