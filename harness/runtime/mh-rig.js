@@ -25,6 +25,7 @@ const DEF = {
   eyes: { shape: 'oval', gap: 0.32, size: 0.12, y: -0.05, color: '#111' },
   mouth: { shape: 'none' },
 };
+const RESERVED = /^(body|eyeL|eyeR|mouth|cheekL|cheekR|sweat|limb\d+|extra\d+)$/;
 const BLINK = 0.12, SWEAT = '#7EC8F0', CHEEK = '#F4A3A3', SVGNS = 'http://www.w3.org/2000/svg';
 const warned = new Set();
 const warnOnce = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(msg); } };
@@ -41,13 +42,26 @@ function normalize(d) {
   const cheeks = d.cheeks ? Object.assign({ color: CHEEK, size: 0.1, gap: 0.62, y: 0.1 }, d.cheeks === true ? null : d.cheeks) : null;
   // 팔다리: at = 붙는 점(몸통 w·h 비율, 0 = 중심), len·w px, angle 도(0 = 아래로)
   const limbs = (d.limbs || []).map(l => Object.assign({ at: [0, 0.5], len: 40, w: 18, angle: 0, color: body.color }, l));
-  const extras = (d.extras || []).map(e => Object.assign({}, e));   // { d, fill, stroke?, width?, x?, y? } 몸통 위·얼굴 아래에 그린다
+  // extras: { d, fill, stroke?, width?, x?, y?, part? } 몸통 위·얼굴 아래에 그린다. part 가 기본 부위 이름과 겹치거나 중복이면 'extra<i>' 로 바꾼다.
+  const used = new Set();
+  const extras = (d.extras || []).map((e, i) => {
+    const x = Object.assign({}, e), own = 'extra' + i;
+    if (x.part != null && x.part !== own && (RESERVED.test(x.part) || used.has(x.part))) { warnOnce('part:' + x.part, `MH.rig: extras 의 part '${x.part}' 는 기본 부위·다른 extras 와 겹칩니다 — '${own}' 로 바꿉니다.`); x.part = own; }
+    x.part = x.part ?? own; used.add(x.part); return x;
+  });
   const out = Object.assign({}, d, { body, eyes, mouth, cheeks, limbs, extras });
   Object.defineProperty(out, '_rig', { value: true });
   return out;
 }
 const norm = d => (d && d._rig ? d : normalize(d));
-const screenSize = o => { const dna = (typeof window !== 'undefined' && window.DNA) || {}; return [o.W ?? dna.W ?? 1920, o.H ?? dna.H ?? 1080]; };
+// 화면 크기: o.W/H → window.DNA.W/H → #root 의 data-width/height → 1920×1080 (R10, 세로 9:16 프로젝트 대응)
+function screenSize(o) {
+  const dna = (typeof window !== 'undefined' && window.DNA) || {};
+  let el = null; try { el = typeof document !== 'undefined' && document.getElementById ? document.getElementById('root') : null; } catch (e) { el = null; }
+  const attr = k => { const v = el && (el.getAttribute ? el.getAttribute('data-' + k) : el.dataset && el.dataset[k]); const n = Number(v); return v != null && n > 0 ? n : undefined; };
+  return [o.W ?? dna.W ?? attr('width') ?? 1920, o.H ?? dna.H ?? attr('height') ?? 1080];
+}
+const pt = (v, x, y) => [(v && v[0]) ?? x, (v && v[1]) ?? y];   // 일부만 준 좌표 [x] 는 성분별로 현재 값
 const blinkOpen = p => (p <= 0 || p >= 1 ? 1 : 1 - clamp(1.25 * Math.sin(Math.PI * p)));   // 가운데 40% 는 완전히 감김
 
 // ───────────── 자세 ─────────────
@@ -56,6 +70,7 @@ function pose(design, actions, t, o = {}) {
   const D = norm(design), seed = o.seed ?? 1, life = o.life !== false, [W, H] = screenSize(o), M = motion();
   const k = v => () => v;
   const ch = { x: k(o.x ?? 0), y: k(o.y ?? 0), sx: k(1), sy: k(1), rot: k(0), anchor: k(0), lx: k(0), ly: k(0), swing: k(0) };
+  const rest = { x: o.x ?? 0, y: o.y ?? 0, sx: 1, sy: 1, rot: 0, anchor: 0, lx: 0, ly: 0, swing: 0 };   // 일시 동작(nod·shake·걸음 기울기)이 돌아갈 값
   const blinks = [];
   let face = null, talk = null;
   const list = (actions || []).filter(a => a && a[0] <= t).sort((a, b) => a[0] - b[0]);
@@ -63,7 +78,9 @@ function pose(design, actions, t, o = {}) {
     const opts = op && typeof op === 'object' ? op : {};
     const at = key => ch[key](ta);
     const mo = (dur, extra) => Object.assign({ dur, ant: opts.ant, over: opts.over, settle: opts.settle }, extra);
-    const ease = (key, to, dur, extra) => { const a = at(key), m = mo(dur, extra); ch[key] = tt => move(tt, ta, a, to, m); };
+    const ease = (key, to, dur, extra) => { const a = at(key), m = mo(dur, extra); rest[key] = to; ch[key] = tt => move(tt, ta, a, to, m); };
+    // 일시 동작: rest 를 중심으로 osc(s) 를 더하고, 앞 동작이 남긴 어긋남(at − rest)은 0.15초에 0 으로 풀린다 → 겹쳐도 영구 기울기가 남지 않는다
+    const wobble = (key, osc) => { const r = rest[key], d0 = at(key) - r; ch[key] = tt => { const s = tt - ta, f = s >= 0.15 ? 0 : d0 * (1 - E.out(s / 0.15)); return r + f + osc(s); }; };
     const flat = { ant: 0, over: 0, settle: 0 };
     switch (name) {
       case 'blink': blinks.push([ta, opts.dur ?? BLINK]); break;
@@ -82,38 +99,40 @@ function pose(design, actions, t, o = {}) {
         break;
       }
       case 'hop': {
-        const f = hopFn(ta, opts, at, D.body.h, M);
+        const f = hopFn(ta, opts, at, D.body.h, M), end = f(Infinity);
+        Object.assign(rest, { x: end.x, y: end.y, sx: 1, sy: 1 });
         ch.x = tt => f(tt).x; ch.y = tt => f(tt).y; ch.sx = tt => f(tt).sx; ch.sy = tt => f(tt).sy;
         break;
       }
       case 'walk': {
-        const to = opts.to || [at('x'), at('y')], steps = opts.steps ?? 4, dur = opts.dur ?? 0.3 * steps, bob = opts.bob ?? 0.06 * D.body.h;
-        const x0 = at('x'), y0 = at('y'), r0 = at('rot'), w0 = at('swing'), m = mo(dur);
-        const st = tt => { const p = (tt - ta) / dur; return p >= 1 ? 0 : Math.sin(Math.PI * steps * clamp(p)); };   // 걸음마다 부호가 바뀐다, 끝에서 정확히 0
+        const x0 = at('x'), y0 = at('y'), to = pt(opts.to, x0, y0), steps = opts.steps ?? 4, dur = opts.dur ?? 0.3 * steps, bob = opts.bob ?? 0.06 * D.body.h;
+        const m = mo(dur, { ant: opts.ant ?? 0, over: opts.over ?? 0 });   // R10: 걷기는 기본 예비동작·지나침 없음
+        const st = s => { const p = s / dur; return p >= 1 ? 0 : Math.sin(Math.PI * steps * clamp(p)); };   // 걸음마다 부호가 바뀐다, 끝에서 정확히 0
+        Object.assign(rest, { x: to[0], y: to[1] });
         ch.x = tt => move(tt, ta, x0, to[0], m);
-        ch.y = tt => move(tt, ta, y0, to[1], m) - bob * Math.abs(st(tt));
-        ch.rot = tt => r0 + 3 * st(tt);
-        ch.swing = tt => w0 * (1 - clamp((tt - ta) / dur)) + 20 * st(tt);
+        ch.y = tt => move(tt, ta, y0, to[1], m) - bob * Math.abs(st(tt - ta));
+        wobble('rot', s => 3 * st(s)); wobble('swing', s => 20 * st(s));
         break;
       }
       case 'talk': talk = [ta, typeof op === 'number' ? op : opts.dur ?? 1]; break;
-      case 'nod': { const a = at('rot'), dur = opts.dur ?? 0.4, amp = opts.amt ?? 8; ch.rot = tt => { const s = (tt - ta) / dur; return s >= 1 ? a : a + amp * Math.sin(Math.PI * s) ** 2; }; break; }
-      case 'shake': { const a = at('rot'), dur = opts.dur ?? 0.5, amp = opts.amt ?? 6; ch.rot = tt => { const s = (tt - ta) / dur; return s >= 1 ? a : a + amp * Math.sin(6 * Math.PI * s) * (1 - s); }; break; }
+      case 'nod': { const dur = opts.dur ?? 0.4, amp = opts.amt ?? 8; wobble('rot', s => (s >= dur ? 0 : amp * Math.sin(Math.PI * s / dur) ** 2)); break; }
+      case 'shake': { const dur = opts.dur ?? 0.5, amp = opts.amt ?? 6; wobble('rot', s => { const p = s / dur; return p >= 1 ? 0 : amp * Math.sin(6 * Math.PI * p) * (1 - p); }); break; }
       case 'enter': case 'exit': {
         const here = [at('x'), at('y')], dir = (name === 'enter' ? opts.from : opts.to) ?? 'below', dur = opts.dur ?? 0.6;
         const off = p => dir === 'below' ? [p[0], p[1] + H] : dir === 'above' ? [p[0], p[1] - H] : dir === 'left' ? [p[0] - W, p[1]] : dir === 'right' ? [p[0] + W, p[1]] : p;
         if (name === 'enter') {
-          const dest = opts.at || here;
+          const dest = pt(opts.at, here[0], here[1]);
+          Object.assign(rest, { x: dest[0], y: dest[1] });
           if (dir === 'scale') {
             const fx = at('sx') > 0.01 ? at('sx') : 1, fy = at('sy') > 0.01 ? at('sy') : 1, m = mo(dur, { ant: opts.ant ?? 0 });   // 0 에서 커질 때 예비동작은 음수 배율이 되므로 기본 0
-            ch.x = k(dest[0]); ch.y = k(dest[1]); ch.sx = tt => move(tt, ta, 0, fx, m); ch.sy = tt => move(tt, ta, 0, fy, m);
+            ch.x = k(dest[0]); ch.y = k(dest[1]); ch.sx = tt => move(tt, ta, 0, fx, m); ch.sy = tt => move(tt, ta, 0, fy, m); Object.assign(rest, { sx: fx, sy: fy });
           } else { const s = off(dest), m = mo(dur); ch.x = tt => move(tt, ta, s[0], dest[0], m); ch.y = tt => move(tt, ta, s[1], dest[1], m); }
         } else if (dir === 'scale') { ease('sx', 0, dur, { settle: 0 }); ease('sy', 0, dur, { settle: 0 }); }
         else { const e = off(here); ease('x', e[0], dur); ease('y', e[1], dur); }
         break;
       }
-      case 'grow': {   // 몸통 너비가 화면 대각선을 덮을 때까지, 화면 중앙으로, anchor 0→1
-        const dur = opts.dur ?? 0.8, S = opts.scale ?? Math.hypot(W, H) / D.body.w;
+      case 'grow': {   // R9: 몸통의 짧은 변이 화면 대각선을 덮을 때까지, 화면 중앙으로, anchor 0→1
+        const dur = opts.dur ?? 0.8, S = opts.scale ?? Math.hypot(W, H) / Math.min(D.body.w, D.body.h);
         ease('sx', S, dur); ease('sy', S, dur); ease('x', W / 2, dur); ease('y', H / 2, dur); ease('anchor', 1, dur, flat);
         break;
       }
@@ -133,7 +152,7 @@ function pose(design, actions, t, o = {}) {
   return {
     x: ch.x(t), y: ch.y(t), sx: ch.sx(t), sy, rot,
     eyes: { open, lx: ch.lx(t), ly: ch.ly(t), shape: F.eyes },
-    mouth: talking ? { shape: 'open', open: 0.5 + 0.5 * Math.sin(2 * Math.PI * 6 * (t - talk[0])) } : { shape: F.mouth, open: 1 },
+    mouth: talking ? { shape: 'open', open: 0.5 - 0.5 * Math.cos(2 * Math.PI * 6 * (t - talk[0])) } : { shape: F.mouth, open: 1 },
     face: face || 'idle',
     limbs: D.limbs.map((_, i) => (i % 2 ? -sw : sw)),
     sweat: F.sweat || 0,
@@ -143,7 +162,7 @@ function pose(design, actions, t, o = {}) {
 // 깡충: 웅크림 0.15초(sy → 1−clamp(2·ant, 0, .3)) → 포물선 비행(꼭대기 −h, sy 1.08 늘어남) → 착지 찌그러짐 0.15초 → 흔들림 0.35초.
 //   땅에 닿아 있는 동안은 발이 붙도록 중심을 (1−sy)·h/2 만큼 내린다. 시작 배율(이전 squash 등)은 웅크림 동안 1 로 풀린다.
 function hopFn(ta, opts, at, bh, M) {
-  const x0 = at('x'), y0 = at('y'), sx0 = at('sx'), sy0 = at('sy'), to = opts.to || [x0, y0], h = opts.h ?? 120;
+  const x0 = at('x'), y0 = at('y'), sx0 = at('sx'), sy0 = at('sy'), to = pt(opts.to, x0, y0), h = opts.h ?? 120;
   const dur = Math.max(opts.dur ?? 0.7, 0.4), C = 0.15, L = 0.15, F = dur - C - L, WOB = 0.35;
   const dip = clamp(2 * (opts.ant ?? M.ant), 0, 0.3), land = 1 / (opts.squash ?? M.squash);
   let last = NaN, val = null;
@@ -174,13 +193,14 @@ function bodyPath(B) {
   const r = Math.min(B.shape === 'capsule' ? Infinity : B.r, w, h);
   return P`M${-w + r} ${-h}H${w - r}A${r} ${r} 0 0 1 ${w} ${-h + r}V${h - r}A${r} ${r} 0 0 1 ${w - r} ${h}H${-w + r}A${r} ${r} 0 0 1 ${-w} ${h - r}V${-h + r}A${r} ${r} 0 0 1 ${-w + r} ${-h}Z`;
 }
-function eyePath(shape, s, color) {
+// 선 눈(line·arc·arcDown)은 깜빡일 때 변환 대신 경로의 y 를 open 배로 눌러 선 굵기를 유지한다 (flat = true)
+function eyePath(shape, s, color, open) {
   const sw = { stroke: color, width: Math.max(2, s * 0.18) };
   switch (shape) {
     case 'dot': return { d: ellipse(s * 0.35, s * 0.35), fill: color };
-    case 'line': return { d: P`M${-s * 0.4} 0L${s * 0.4} 0`, ...sw };
-    case 'arc': return { d: P`M${-s * 0.42} ${s * 0.15}Q0 ${-s * 0.45} ${s * 0.42} ${s * 0.15}`, ...sw };
-    case 'arcDown': return { d: P`M${-s * 0.42} ${-s * 0.15}Q0 ${s * 0.45} ${s * 0.42} ${-s * 0.15}`, ...sw };
+    case 'line': return { d: P`M${-s * 0.4} 0L${s * 0.4} 0`, ...sw, flat: true };
+    case 'arc': return { d: P`M${-s * 0.42} ${s * 0.15 * open}Q0 ${-s * 0.45 * open} ${s * 0.42} ${s * 0.15 * open}`, ...sw, flat: true };
+    case 'arcDown': return { d: P`M${-s * 0.42} ${-s * 0.15 * open}Q0 ${s * 0.45 * open} ${s * 0.42} ${-s * 0.15 * open}`, ...sw, flat: true };
     case 'star': {
       let d = '';
       for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, R = s * (i % 2 ? 0.25 : 0.58); d += (i ? 'L' : 'M') + r3(R * Math.cos(a)) + ' ' + r3(R * Math.sin(a)); }
@@ -209,17 +229,18 @@ function geometry(design, p) {
     add('limb' + i, { d: P`M${-r} 0V${l.len - r}A${r} ${r} 0 0 0 ${r} ${l.len - r}V${-r}H${-r}Z`, fill: l.color }, [l.at[0] * w, l.at[1] * h, l.angle + ((p.limbs || [])[i] || 0), 1, 1]);
   });
   add('body', { d: bodyPath(B), fill: B.color }, [0, 0, 0, 1, 1]);
-  D.extras.forEach((e, i) => add(e.part || 'extra' + i, e, [e.x || 0, e.y || 0, 0, 1, 1]));
+  D.extras.forEach(e => add(e.part, e, [e.x || 0, e.y || 0, 0, 1, 1]));
   const lx = (eyes.lx || 0) * (D.eyes.look ?? 0.1) * w, ly = (eyes.ly || 0) * 0.08 * h;
   if (D.cheeks) { const C = D.cheeks, cs = C.size * w; for (const [n, sg] of [['cheekL', -1], ['cheekR', 1]]) add(n, { d: ellipse(cs * 0.5, cs * 0.3), fill: C.color }, [sg * C.gap * w / 2 + lx * 0.3, C.y * h + ly * 0.3, 0, 1, 1]); }
   const s = D.eyes.size * w, open = Math.max(0.08, eyes.open ?? 1);
-  for (const [n, sg] of [['eyeL', -1], ['eyeR', 1]]) add(n, eyePath(eyes.shape || D.eyes.shape, s, D.eyes.color), [sg * D.eyes.gap * w / 2 + lx, D.eyes.y * h + ly, 0, 1, open]);
+  const eye = eyePath(eyes.shape || D.eyes.shape, s, D.eyes.color, open);
+  for (const [n, sg] of [['eyeL', -1], ['eyeR', 1]]) add(n, eye, [sg * D.eyes.gap * w / 2 + lx, D.eyes.y * h + ly, 0, 1, eye.flat ? 1 : open]);
   const Mo = D.mouth, mw = (Mo.w ?? 0.2) * w;
   add('mouth', mouthPath(mouth.shape || Mo.shape, mouth.open ?? 1, mw, Mo.color ?? D.eyes.color, Mo.width ?? Math.max(3, w * 0.025)), [lx * 0.5, (Mo.y ?? 0.2) * h + ly * 0.5, 0, 1, 1]);
   if (p.sweat > 0) { const ds = 0.09 * w; add('sweat', { d: P`M0 ${-ds}C${ds * 0.6} ${-ds * 0.2} ${ds * 0.6} ${ds * 0.6} 0 ${ds * 0.6}C${-ds * 0.6} ${ds * 0.6} ${-ds * 0.6} ${-ds * 0.2} 0 ${-ds}Z`, fill: (D.sweat && D.sweat.color) || SWEAT }, [0.5 * w, -0.4 * h, 0, p.sweat, p.sweat]); }
   return out;
 }
-const partNames = D => [...D.limbs.map((_, i) => 'limb' + i), 'body', ...D.extras.map((e, i) => e.part || 'extra' + i), ...(D.cheeks ? ['cheekL', 'cheekR'] : []), 'eyeL', 'eyeR', 'mouth', 'sweat'];
+const partNames = D => [...D.limbs.map((_, i) => 'limb' + i), 'body', ...D.extras.map(e => e.part), ...(D.cheeks ? ['cheekL', 'cheekR'] : []), 'eyeL', 'eyeR', 'mouth', 'sweat'];
 
 // ───────────── 배우 (렌더러) ─────────────
 function actor(target, design, o = {}) {
@@ -273,7 +294,8 @@ function actor(target, design, o = {}) {
 // assets/actors/<name>.json 의 디자인(또는 리그 JSON)을 불러온다.
 function load(name) {
   const url = 'assets/actors/' + name + '.json';
-  return fetch(url).then(r => { if (!r.ok) throw new Error(`캐릭터 파일을 불러오지 못했습니다: ${url} (HTTP ${r.status})`); return r.json(); });
+  const fail = why => new Error(`캐릭터 파일을 불러오지 못했습니다: ${url} (${why})`);
+  return Promise.resolve().then(() => fetch(url)).then(r => { if (!r.ok) throw fail('HTTP ' + r.status); return r.json(); }, e => { throw fail(e && e.message || e); });
 }
 
 MH.rig = { FACES, normalize, pose, geometry, actor, load };

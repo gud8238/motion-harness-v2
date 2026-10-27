@@ -72,10 +72,10 @@ test('look moves eye positions in geometry', () => {
   const ey = p => MH.rig.geometry(D, p).find(g => g.part === 'eyeL').m[1];
   assert.ok(ey(p1) < ey(p0));
 });
-test('grow covers the screen diagonal (16:9 and 9:16)', () => {
+test('grow covers the screen diagonal with the short side (16:9 and 9:16)', () => {
   for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
     const p = MH.rig.pose(D, [[0, 'grow', { fill: 'screen' }]], 3, { life: false, W, H });
-    assert.ok(Math.abs(p.sx * D.body.w - Math.hypot(W, H)) < 1e-6, `${W}x${H}`);
+    assert.ok(Math.min(p.sx * D.body.w, p.sy * D.body.h) >= Math.hypot(W, H) * 0.999, `${W}x${H}`);   // R9
     assert.equal(p.sy, p.sx); assert.equal(p.x, W / 2); assert.equal(p.y, H / 2); assert.equal(p.anchor, 1);
   }
   const mid = MH.rig.pose(D, [[0, 'grow']], 0.3, OFF);
@@ -112,7 +112,7 @@ test('actions fold from the value left by earlier actions', () => {
 });
 test('talk opens the mouth at 6Hz then returns to the face mouth', () => {
   const A = [[0, 'face', 'happy'], [1, 'talk', { dur: 1 }]];
-  const opens = Array.from({ length: 30 }, (_, i) => MH.rig.pose(D, A, 1 + i / 30, OFF).mouth);
+  const opens = Array.from({ length: 120 }, (_, i) => MH.rig.pose(D, A, 1 + i / 120, OFF).mouth);
   assert.ok(opens.every(m => m.shape === 'open'));
   assert.ok(Math.max(...opens.map(m => m.open)) > 0.95 && Math.min(...opens.map(m => m.open)) < 0.05);
   assert.equal(MH.rig.pose(D, A, 2.5, OFF).mouth.shape, 'smile');
@@ -206,4 +206,85 @@ test('load fetches assets/actors/<name>.json and rejects in Korean', async () =>
   assert.equal((await R.rig.load('blob')).body.w, 10);
   assert.equal(urls[0], 'assets/actors/blob.json');
   await assert.rejects(R.rig.load('none'), /불러오지 못했습니다/);
+});
+
+// ── 리뷰 1차 수정 ──
+test('overlapping transient rotations leave no permanent tilt', () => {
+  for (const A of [[[0, 'nod'], [0.2, 'walk', { to: [100, 0] }]], [[0, 'walk', { to: [300, 0] }], [1.05, 'nod']], [[0, 'shake'], [0.1, 'nod'], [0.3, 'shake']]]) {
+    assert.ok(Math.abs(MH.rig.pose(D, A, 5, OFF).rot) < 0.01, JSON.stringify(A));
+  }
+  const L = MH.rig.normalize({ limbs: [{}, {}] });
+  assert.ok(Math.abs(MH.rig.pose(L, [[0, 'walk', { to: [100, 0] }], [0.5, 'walk', { to: [200, 0] }]], 5, OFF).limbs[0]) < 0.01);
+});
+test('stroked eyes keep their stroke while blinking', () => {
+  for (const f of ['squint', 'happy', 'sad']) {
+    const p = MH.rig.pose(D, [[0, 'face', f], [1, 'blink']], 1.06, OFF);
+    assert.ok(p.eyes.open < 0.2);
+    const e = MH.rig.geometry(D, p).find(g => g.part === 'eyeL');
+    assert.ok(e.stroke && e.width >= 2, f); assert.equal(e.m[4], 1, f);
+    const xs = e.d.match(/-?[\d.]+/g).map(Number);
+    assert.ok(Math.max(...xs) - Math.min(...xs) > 5, f + ' path not degenerate');
+  }
+  const ov = MH.rig.geometry(D, MH.rig.pose(D, [[1, 'blink']], 1.06, OFF)).find(g => g.part === 'eyeL');
+  assert.ok(ov.m[4] < 0.2);   // 채운 눈은 여전히 세로로 눌린다
+});
+test('screen size falls back to #root data-width/height', () => {
+  const root = { getAttribute: k => ({ 'data-width': '1080', 'data-height': '1920' })[k] ?? null };
+  const R = loadRuntime(RT, { document: { createElement: () => ({}), getElementById: id => (id === 'root' ? root : null) } }).MH, d = R.rig.normalize({});
+  const p = R.rig.pose(d, [[0, 'grow']], 3, OFF);
+  assert.equal(p.x, 540); assert.equal(p.y, 960);
+  const q = R.rig.pose(d, [[0, 'grow']], 3, { life: false, W: 800, H: 600 });
+  assert.equal(q.x, 400);
+  const W = loadRuntime(RT); W.DNA = { W: 1000, H: 1000 };
+  assert.equal(W.MH.rig.pose(d, [[0, 'grow']], 3, OFF).y, 500);
+  assert.equal(MH.rig.pose(D, [[0, 'grow']], 3, OFF).x, 960);
+});
+test('talk starts and ends with the mouth closed', () => {
+  const A = [[1, 'talk', { dur: 1 }]];
+  assert.ok(MH.rig.pose(D, A, 1, OFF).mouth.open < 1e-9);
+  assert.ok(MH.rig.pose(D, A, 1.999, OFF).mouth.open < 0.01);
+});
+test('walk has no anticipation or overshoot by default (R10)', () => {
+  const xs = Array.from({ length: 200 }, (_, i) => MH.rig.pose(D, [[0, 'walk', { to: [300, 0] }]], i / 100, OFF).x);
+  assert.ok(xs.every((x, i) => x >= 0 && x <= 300 && (i === 0 || x >= xs[i - 1] - 1e-9)));
+  const ant = Array.from({ length: 50 }, (_, i) => MH.rig.pose(D, [[0, 'walk', { to: [300, 0], ant: 0.2 }]], i / 100, OFF).x);
+  assert.ok(Math.min(...ant) < 0);
+});
+test('partial targets fall back per component', () => {
+  const o = { life: false, x: 10, y: 20 };
+  for (const a of [['hop', { to: [300] }], ['walk', { to: [300] }], ['enter', { from: 'left', at: [300] }]]) {
+    const p = MH.rig.pose(D, [[0, ...a]], 5, o);
+    assert.equal(p.x, 300, a[0]); assert.equal(p.y, 20, a[0]);
+  }
+});
+test('extras colliding with built-in part names are renamed', () => {
+  const warns = [], R = loadRuntime(RT, { console: { warn: m => warns.push(m), log() {} } }).MH;
+  const d = R.rig.normalize({ extras: [{ part: 'body', d: 'M0 0L1 1' }, { part: 'hat', d: 'M0 0L1 1' }, { part: 'hat', d: 'M0 0L2 2' }] });
+  assert.deepEqual(d.extras.map(e => e.part), ['extra0', 'hat', 'extra2']);
+  assert.equal(warns.length, 2);
+  const parts = Array.from(R.rig.geometry(d, R.rig.pose(d, [], 0, OFF)).map(g => g.part));
+  assert.equal(parts.filter(n => n === 'body').length, 1);
+  assert.equal(R.rig.normalize(d).extras[0].part, 'extra0'); assert.equal(warns.length, 2);   // 다시 정규화해도 경고 없음
+});
+test('load wraps network errors in Korean', async () => {
+  const R = loadRuntime(RT, { fetch: () => Promise.reject(new Error('offline')) }).MH;
+  await assert.rejects(R.rig.load('x'), /불러오지 못했습니다: assets\/actors\/x\.json \(offline\)/);
+});
+test('channels stay continuous across interrupting actions', () => {
+  const keys = ['x', 'y', 'sx', 'sy', 'rot'], bound = { x: 30, y: 30, sx: 0.25, sy: 0.25, rot: 3 };
+  const cases = [
+    [[0, 'stretch', { x: 2.2 }], [0.5, 'hop', { to: [200, 0] }]],
+    [[0, 'squash'], [0.12, 'squash', { amt: 0.7 }]],
+    [[0, 'hop', { to: [200, 0] }], [0.85, 'walk', { to: [0, 0] }]],
+    [[0, 'nod'], [0.2, 'walk', { to: [100, 0] }]],
+    [[0, 'walk', { to: [300, 0] }], [1.05, 'nod']],
+  ];
+  for (const A of cases) {
+    let prev = MH.rig.pose(D, A, 0, OFF);
+    for (let i = 1; i <= 360; i++) {
+      const p = MH.rig.pose(D, A, i / 120, OFF);
+      for (const k of keys) assert.ok(Math.abs(p[k] - prev[k]) <= bound[k], `${JSON.stringify(A)} ${k} @${(i / 120).toFixed(3)}: ${prev[k]} → ${p[k]}`);
+      prev = p;
+    }
+  }
 });
