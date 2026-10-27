@@ -24,18 +24,21 @@ function parseTier(cell) {
   return m ? TIERS[m[1]] : null;
 }
 
-// "효과 표" 가 있는 줄 다음의 첫 마크다운 표(헤더·구분선 제외)를 행으로 읽는다. 없으면 [].
+// "효과 표" 가 있는 표 밖의 줄 다음의 첫 마크다운 표(헤더·구분선 제외)를 행으로 읽는다. 없으면 [].
+// 표 칸 안의 "효과 표"(예: DNA 칸 "(효과 표 참고)")는 제목이 아니다. 열이 헤더보다 많거나 첫 칸이 `#`·`효과 id` 인 행(붙어 있는 다음 표)에서 멈춘다.
+// 열이 모자란 행은 사람이 칸을 빠뜨린 효과 행으로 보고 읽는다(근거 칸 invalid → 게이트가 보고).
 export function parseEffectTable(md) {
   const lines = String(md).split(/\r?\n/);
-  const h = lines.findIndex(l => l.includes('효과 표'));
+  const h = lines.findIndex(l => !isRow(l) && l.includes('효과 표'));
   if (h < 0) return [];
   let i = h + 1;
   while (i < lines.length && !isRow(lines[i])) i++;
   const rows = [];
-  let first = true;
+  let width = 0;
   for (; i < lines.length && isRow(lines[i]); i++) {
     const c = cellsOf(lines[i]);
-    if (first) { first = false; continue; }                       // 헤더 행
+    if (!width) { width = c.length; continue; }                   // 헤더 행
+    if (c.length > width || /^(#|효과 ?id)$/i.test((c[0] || '').replace(/`/g, '').trim())) break;   // 다른 표가 붙어 있음
     if (c.every(x => /^:?-+:?$/.test(x))) continue;               // 구분선
     const id = (c[0] || '').replace(/`/g, '').trim();
     if (!id) continue;

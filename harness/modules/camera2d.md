@@ -1,7 +1,7 @@
 # camera2d — 2D 가상 카메라
 
 큰 DOM 월드 위를 카메라가 팬·줌·회전한다. 카메라 변수는 항상 `cam`, 호출은 `cam.layer(` 처럼 괄호 앞 공백 없이 쓴다.
-소스 점검: `MH.cam(` → cam.pan/push/rotate 근거 필요 · `cam.layer(` → cam.parallax · `cam.shake(` → cam.shake.
+게이트: `MH.cam(` → cam.pan/push/rotate/shake/parallax·lens.dof/rack 중 하나의 근거 · `cam.layer(` → cam.parallax · `cam.shake(` → cam.shake.
 
 ## 만들기
 ```js

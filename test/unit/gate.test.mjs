@@ -204,3 +204,30 @@ test('morph.many( alone is caught as morph.shape no-row (R14)', () => {
   const r = runGate(d);
   assert.deepEqual(r.violations.map(v => [v.id, v.reason, v.line]), [['morph.shape', 'no-row', 3]]);
 });
+
+// R19: MH.cam( 는 cam.pan/push/rotate 뿐 아니라 cam.shake·cam.parallax·lens.dof·lens.rack 근거로도 통과한다
+const camProject = (code, rows) => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-cam-'));
+  fs.mkdirSync(path.join(d, 'scene', 'compositions'), { recursive: true });
+  fs.mkdirSync(path.join(d, 'work', 'ref-b'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'work', 'ref-b', 'ev_x.png'), 'x');
+  fs.writeFileSync(path.join(d, 'brief.md'), '# b\n');
+  fs.writeFileSync(path.join(d, 'scene', 'compositions', 's1.html'), `<template><script>\n${code}\n</script></template>\n`);
+  fs.writeFileSync(planOf(d), rows == null ? '# 계획\n' : TABLE(rows));
+  return d;
+};
+test('MH.cam( + lens.dof( with only a valid lens.dof row passes (R19)', () => {
+  const d = camProject('const cam = MH.cam(world);\nconst lens = MH.lens;\nconst dof = lens.dof(cam, { focus: 1 });', '| lens.dof | ② | b 1–2s (ev_x.png) | s1 |');
+  const r = runGate(d);
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+test('MH.cam( + cam.shake( with only a valid cam.shake row passes (R19)', () => {
+  const d = camProject('const cam = MH.cam(world);\ncam.shake(2, 2.4, 0.01, 18);', '| cam.shake | ② | b 1–2s (ev_x.png) | s1 |');
+  assert.equal(runGate(d).ok, true);
+});
+test('MH.cam( with no effect row is still no-row and names the new ids', () => {
+  const r = runGate(camProject('const cam = MH.cam(world);', null));
+  assert.equal(r.ok, false);
+  const v = r.violations.find(v => v.reason === 'no-row');
+  for (const id of ['cam.pan', 'cam.push', 'cam.rotate', 'cam.shake', 'cam.parallax', 'lens.dof', 'lens.rack']) assert.ok(v.id.split('/').includes(id), id);
+});

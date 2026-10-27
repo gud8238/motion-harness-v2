@@ -98,3 +98,20 @@ test('auto strip names with id and start time parse (dots, hyphens, underscores)
   assert.deepEqual(r[0].evidence, { ref: 'b_ref', t0: 6.67, t1: 7.67, img: 'ev_trans-fill_6.67.png' });
   assert.deepEqual(r[1].evidence, { ref: 'b_ref', t0: 0, t1: 2, img: 'ev_cam-push_0.00_2.png' });
 });
+
+test('"효과 표" inside a DNA cell does not hijack the effect table heading', () => {
+  const md = `# 계획\n| # | 항목 | 레퍼런스 (근거) | 적용값 | 판정 |\n| 7 | 전환 | 채움 (효과 표 참고) | 채움 | 채택 |\n| 8 | 카메라 | 고정 | 고정 | 채택 |\n효과 표 (② 근거)\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| trans.fill | ② | b 4.6–5.4s (ev.png) | s2 |\n`;
+  const r = parseEffectTable(md);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].id, 'trans.fill');
+});
+test('a scene table directly after the effect table is not read', () => {
+  const md = `효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n|---|---|---|---|\n| trans.fill | ② | b 4.6–5.4s (ev.png) | s2 |\n| # | 시간 | 종류 | 화면 | 소스 | DNA·시그니처 | 전환 | 효과음 | 문구 |\n| s2 | 4–8 | canvas | x | — | S1 | 컷 | tick | 글 |\n`;
+  assert.deepEqual(parseEffectTable(md).map(r => r.id), ['trans.fill']);
+  const same = `효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| fx.vhs | ③ | 사용자 지정 | s4 |\n| # | a | b | c |\n| s1 | x | y | z |\n`;
+  assert.deepEqual(parseEffectTable(same).map(r => r.id), ['fx.vhs']);
+  const wider = `효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| fx.vhs | ③ | 사용자 지정 | s4 |\n| s1 | 0–4 | dom | x | — | S1 |\n`;
+  assert.deepEqual(parseEffectTable(wider).map(r => r.id), ['fx.vhs']);
+  const second = `효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| fx.vhs | ③ | 사용자 지정 | s4 |\n| 효과 id | 단계 | 근거 | 사용 위치 |\n| lens.dof | ② | b 1–2s (e.png) | s1 |\n`;
+  assert.deepEqual(parseEffectTable(second).map(r => r.id), ['fx.vhs']);
+});

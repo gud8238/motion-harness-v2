@@ -1,7 +1,7 @@
 # transitions — 연결 전환 (trans2d)
 
 항상 맨 위에서 `const trans = MH.trans2d;` 로 줄여 쓰고 `trans.fill(` 처럼 호출한다(`MH.trans2d.fill(` 직접 호출 금지).
-소스 점검: `trans.fill(` · `trans.zoomThrough(` · `trans.whip(` · `trans.match(` 마다 같은 이름의 전환 근거가 필요하다. 카메라 `cam` 은 `camera2d` 모듈.
+게이트: `trans.fill(` · `trans.zoomThrough(` · `trans.whip(` · `trans.match(` 마다 같은 이름의 전환 근거가 필요하다. 카메라 `cam` 은 `camera2d` 모듈.
 ```js
 const trans = MH.trans2d;
 ```

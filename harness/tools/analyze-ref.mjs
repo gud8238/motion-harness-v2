@@ -33,7 +33,7 @@ else {
 
 // strip: 자동 감지가 놓친 효과의 근거 이미지(구간 6장) → work/ref-<이름>/ev_mNN.png (다음 빈 번호)
 async function stripCommand(file, a0, a1) {
-  const usage = '사용법: node harness/tools/analyze-ref.mjs strip <프로젝트> ref/<영상> <시작초> <끝초>';
+  const usage = '사용법: analyze-ref.mjs strip <프로젝트> ref/<영상> <시작초> <끝초> (mv-plan 의 도구 경로로)';
   if (!fs.statSync(file).isFile() || !VID.test(file)) die('strip 은 영상 파일 하나를 받습니다: ' + file + '\n' + usage);
   const t0 = parseFloat(a0), t1 = parseFloat(a1), P = probe(file);
   if (!P.duration) die('길이를 읽을 수 없습니다: ' + file);
@@ -179,7 +179,7 @@ async function analyzeVideo(file) {
   const md = `# 레퍼런스 측정: ${path.basename(file)}
 
 > DNA의 근거. **\`card.png\` 한 장을 직접 보고** DNA를 쓴다 (팔레트·대표 프레임·질감 확대·움직임). 더 필요할 때만: \`sheet.jpg\`(1초 간격 전체), \`shots.png\`, \`texture.png\`, ${strips.map(s => `\`${s}\``).join(', ') || '(움직임 스트립 없음)'}
-> 효과 근거 후보: **${evPages.map(f => `\`${f}\``).join(', ')}** (${evPages.length}쪽) 를 보고 확정·기각 (\`evidence.json\`). 놓친 효과는 \`node harness/tools/analyze-ref.mjs strip <프로젝트> "${fwd(path.relative(proj, file))}" <시작초> <끝초>\`
+> 효과 근거 후보: **${evPages.map(f => `\`${f}\``).join(', ')}** (${evPages.length}쪽) 를 보고 확정·기각 (\`evidence.json\`). 놓친 효과는 \`analyze-ref.mjs strip <프로젝트> "${fwd(path.relative(proj, file))}" <시작초> <끝초>\` (mv-plan 의 도구 경로로)
 
 | 항목 | 측정값 |
 |---|---|

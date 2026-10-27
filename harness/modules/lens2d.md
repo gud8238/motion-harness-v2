@@ -1,12 +1,12 @@
 # lens2d — 심도·초점 이동·스미어·모션 블러
 
 렌즈 변수는 항상 `lens`, 호출은 `lens.dof(` 처럼 괄호 앞 공백 없이 쓴다.
-소스 점검: `lens.dof(` → lens.dof · `lens.rack(`·`.rack(` → lens.rack · `lens.smear(` → lens.smear. 모션 블러는 API 가 없다.
+게이트: `lens.dof(` → lens.dof · `lens.rack(`·`.rack(` → lens.rack · `lens.smear(` → lens.smear. 모션 블러는 API 가 없다.
 
 ## 심도와 초점 이동
 ```js
 const lens = MH.lens;
-const cam = MH.cam(world).layer(far, 0.4).layer(fg, 1.4);   // camera2d 모듈
+const cam = MH.cam(world); cam.layer(far, 0.4); cam.layer(fg, 1.4);   // camera2d 모듈
 const dof = lens.dof(cam, { focus: 1, aperture: 6 });       // 기본값 그대로
 lens.rack(dof, [[0, 1.4], [2, 1], [4, 0.4]]);               // [t, focus]: 키 사이는 선형, 양 끝은 유지
 MH.drive(tl, DUR, t => { cam.render(t); dof.render(t); });  // 순서: cam.render 먼저

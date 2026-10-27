@@ -1,7 +1,7 @@
 # fx2d — VHS·글리치·시간 재매핑
 
 변수는 항상 `fx`·`time`, 호출은 `fx.vhs(` 처럼 괄호 앞 공백 없이 쓴다.
-소스 점검: `fx.vhs(` → fx.vhs · `fx.glitch(` → fx.glitch · `time.remap(` → time.remap.
+게이트: `fx.vhs(` → fx.vhs · `fx.glitch(` → fx.glitch · `time.remap(` → time.remap.
 
 ## VHS 오버레이 (일시정지·되감기·재생)
 ```js

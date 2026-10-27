@@ -1,7 +1,7 @@
 # morph — 도형·글자 모핑
 
 변수는 항상 `morph` 로 줄여 쓰고 호출은 괄호 앞 공백 없이 쓴다.
-소스 점검: `morph.shape(` · `morph.many(` → morph.shape 근거, `morph.text(` → morph.text 근거.
+게이트: `morph.shape(` · `morph.many(` → morph.shape 근거, `morph.text(` → morph.text 근거.
 ```js
 const morph = MH.morph;
 ```

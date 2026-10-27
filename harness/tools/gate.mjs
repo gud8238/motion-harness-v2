@@ -74,7 +74,7 @@ if (isMain()) {
   for (const v of r.violations) console.log(`✖ ${v.id} — ${v.file}:${v.line} — ${WHY[v.reason]}`);
   console.log(`\n② 스타일 효과는 레퍼런스 근거가 있어야 합니다. 아래 셋 중 하나로 해결하세요.
   1) 근거 추가: work/ref-<레퍼런스>/analysis.md 후보의 "→ 근거 칸:" 문구(예: "<레퍼런스> 6.67–7.42s (ev_trans-fill_6.67.png)")를 효과 표 근거 칸에 붙여 넣기.
-     후보에 없으면 node harness/tools/analyze-ref.mjs strip <프로젝트> ref/<영상> <시작초> <끝초> 로 ev_mNN.png 를 만들고 출력된 근거 칸을 적기
+     후보에 없으면 analyze-ref.mjs strip <프로젝트> ref/<영상> <시작초> <끝초> (mv-plan 의 도구 경로로) 로 ev_mNN.png 를 만들고 출력된 근거 칸을 적기
   2) 사용자 지정: 정말 넣고 싶은 효과면 brief.md 의 "효과 지정"에 효과 이름을 적고, 효과 표에 단계 ③ · 근거 "사용자 지정" 으로 적기
   3) 효과 제거: 장면에서 해당 효과 호출을 지우기`);
   process.exit(1);

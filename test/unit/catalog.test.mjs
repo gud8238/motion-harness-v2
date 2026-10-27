@@ -32,7 +32,7 @@ test('findApiCalls finds lines and shared ids, ignores comments', () => {
   const code = 'a\n  const cam = MH.cam(world, {W, H});\n// trans.fill(t)\n  trans.fill(t, el, {t0: 4})';
   const r = findApiCalls(code, loadCatalog());
   assert.deepEqual(r.map(x => x.line), [2, 4]);
-  assert.deepEqual(r[0].ids.sort(), ['cam.pan','cam.push','cam.rotate']);
+  assert.deepEqual(r[0].ids.sort(), ['cam.pan','cam.parallax','cam.push','cam.rotate','cam.shake','lens.dof','lens.rack']);   // R19
   assert.equal(r[0].api, 'MH.cam(');
   assert.deepEqual(r[1].ids, ['trans.fill']);
 });
