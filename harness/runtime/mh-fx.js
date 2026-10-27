@@ -1,8 +1,8 @@
 /* MH.fx / MH.time — 특수효과(VHS·글리치)와 시간 재매핑 (클래식 스크립트, mh.js 다음에 불러온다 → window.MH.fx · window.MH.time)
  * 변수 이름은 항상 `fx`·`time` (const fx = MH.fx, time = MH.time;) — 게이트가 `fx.vhs(`·`fx.glitch(`·`time.remap(` 호출을 찾는다.
  * time.remap([[tOut, tIn], …]) → f(t)   tOut 순으로 정렬, 키 사이는 선형, 범위 밖은 끝값. tIn 이 같으면 정지, 줄어들면 되감기. 같은 tOut 이 겹치면 나중 키가 이긴다(점프).
- * fx.vhs(el, {label, labels, timecode, t0, t1, seed}) → {render(t)}   el 안에 오버레이를 한 번만 만든다(el 이 position 을 가진 상자여야 한다).
- *   주사선(반복 그라디언트) · 트래킹 띠 하나(높이 6%, y = hash(floor(t·12), seed) — 1/12초마다 뛴다) · 좌상단 라벨(RGB 분리 그림자) · 좌하단 타임코드.
+ * fx.vhs(el, {label, labels, timecode, t0, t1, seed, color}) → {render(t)}   el 안에 오버레이를 한 번만 만든다(el 이 position 을 가진 상자여야 한다).
+ *   주사선(반복 그라디언트) · 트래킹 띠 하나(높이 6%, y = hash(floor(t·12), seed) — 1/12초마다 뛴다) · 좌상단 라벨(어두운 그림자 + RGB 분리 그림자, color 기본 '#fff') · 좌하단 타임코드.
  *   labels [[t, 글자], …] 는 vhsLabel 로 고른다. timecode true → 'HH:MM:SS'(t 초), 문자열 → 그대로, false → 숨김. [t0, t1] 밖에서는 display:none.
  *   render 는 style 쓰기와 글자 갱신만 한다(요소를 새로 만들지 않는다).
  * fx.glitch(t, el, {amount, seed}) — 1/24초 단계마다 hash 로: translateX(≤ 8·amount px) + 빨강/청록 drop-shadow(±2·amount px) + clip-path 로 가로 띠 2~4개를 도려낸다.
@@ -45,17 +45,20 @@ const pad2 = n => String(n).padStart(2, '0');
 const timecodeOf = t => { const s = Math.floor(Math.max(0, t)); return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor(s / 60) % 60)}:${pad2(s % 60)}`; };
 
 const BAND_H = 6, STEP = 12;
-function vhs(el, { label = '', labels = null, timecode = true, t0 = 0, t1 = Infinity, seed = 1 } = {}) {
+const DARK = '0 0 6px rgba(0,0,0,.85)';                         // 밝은 배경에서도 읽히도록 깔아 두는 어두운 그림자
+function vhs(el, { label = '', labels = null, timecode = true, t0 = 0, t1 = Infinity, seed = 1, color = '#fff' } = {}) {
   if (!el) throw new Error('fx.vhs: 요소가 필요합니다.');
   const doc = el.ownerDocument || document;
-  const H = el.clientHeight > 0 ? el.clientHeight : 1080, fs = Math.round(H * 0.045), pad = Math.round(H * 0.04);
+  // 글자 크기 기준 = 짧은 변: el 의 크기, 없으면(숨김·분리) MH.screenSize() (R10)
+  const S = el.clientWidth > 0 && el.clientHeight > 0 ? Math.min(el.clientWidth, el.clientHeight) : Math.min(...MH.screenSize());
+  const fs = Math.round(S * 0.045), pad = Math.round(S * 0.04);
   const mk = css => { const d = doc.createElement('div'); Object.assign(d.style, css); return d; };
-  const text = { fontFamily: "ui-monospace,'SF Mono',Menlo,Consolas,Pretendard,monospace", fontSize: fs + 'px', fontWeight: '700', color: '#fff', letterSpacing: '.04em', whiteSpace: 'pre', position: 'absolute', left: pad + 'px' };
+  const text = { fontFamily: "ui-monospace,'SF Mono',Menlo,Consolas,Pretendard,monospace", fontSize: fs + 'px', fontWeight: '700', color, letterSpacing: '.04em', whiteSpace: 'pre', position: 'absolute', left: pad + 'px' };
   const root = mk({ position: 'absolute', left: '0', top: '0', right: '0', bottom: '0', overflow: 'hidden', pointerEvents: 'none', zIndex: '9999' });
   const scan = mk({ position: 'absolute', left: '0', top: '0', right: '0', bottom: '0', background: 'repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0px,rgba(0,0,0,.16) 1px,rgba(0,0,0,0) 1px,rgba(0,0,0,0) 2px)' });
-  const band = mk({ position: 'absolute', left: '0', width: '100%', height: BAND_H + '%', top: '0%', background: 'repeating-linear-gradient(90deg,rgba(255,255,255,.18) 0px,rgba(255,255,255,.18) 3px,rgba(255,255,255,.05) 3px,rgba(255,255,255,.05) 7px)' });
-  const lab = mk({ ...text, top: pad + 'px', textShadow: '-2px 0 rgba(255,0,0,.8),2px 0 rgba(0,255,255,.8)' });
-  const tc = mk({ ...text, bottom: pad + 'px', fontSize: Math.round(fs * 0.8) + 'px', textShadow: '-1.5px 0 rgba(255,0,0,.7),1.5px 0 rgba(0,255,255,.7)' });
+  const band = mk({ position: 'absolute', left: '-12px', width: 'calc(100% + 24px)', height: BAND_H + '%', top: '0%', background: 'repeating-linear-gradient(90deg,rgba(255,255,255,.18) 0px,rgba(255,255,255,.18) 3px,rgba(255,255,255,.05) 3px,rgba(255,255,255,.05) 7px)' });
+  const lab = mk({ ...text, top: pad + 'px', textShadow: DARK + ',-2px 0 rgba(255,0,0,.8),2px 0 rgba(0,255,255,.8)' });
+  const tc = mk({ ...text, bottom: pad + 'px', fontSize: Math.round(fs * 0.8) + 'px', textShadow: DARK + ',-1.5px 0 rgba(255,0,0,.7),1.5px 0 rgba(0,255,255,.7)' });
   if (timecode === false) tc.style.display = 'none';
   [scan, band, lab, tc].forEach(c => root.appendChild(c));
   el.appendChild(root);

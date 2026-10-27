@@ -13,7 +13,7 @@ const vhs = fx.vhs(box, {                      // box: position 이 있는 상�
 });
 MH.drive(tl, DUR, t => vhs.render(t));
 ```
-- 주사선(2px 줄무늬) + 트래킹 띠 하나가 1/12초마다 뛰고, 라벨에 빨강/청록 번짐이 붙는다. 고정 글자만 쓰려면 `label: 'PLAY ▶'`.
+- 주사선(2px 줄무늬) + 트래킹 띠 하나가 1/12초마다 뛰고, 라벨에 빨강/청록 번짐이 붙는다. 고정 글자만 쓰려면 `label: 'PLAY ▶'`. 글자색은 `color`(기본 `#fff`, 어두운 그림자가 깔려 밝은 배경에서도 읽힌다). 크기는 상자의 짧은 변 기준.
 - render 는 style·글자만 바꾼다. 요소는 만들 때 한 번뿐이다.
 
 ## 글리치
@@ -21,7 +21,7 @@ MH.drive(tl, DUR, t => vhs.render(t));
 MH.drive(tl, DUR, t => fx.glitch(t, inner, { amount: t > 3 && t < 3.4 ? 1 : 0, seed: 2 }));
 ```
 1/24초마다 좌우 흔들림(≤ 8·amount px), 색 갈라짐(±2·amount px), 가로 띠 2~4개가 잘려 나간다. amount 0 이면 지운다.
-`inner` 의 transform·filter·clip-path 는 글리치가 쓴다 → 다른 변형은 바깥 요소에, 글리치는 안쪽 요소에 건다.
+`inner` 의 transform·filter·clip-path 는 글리치가 쓴다(amount 0 은 매 프레임 지운다) → `cam.layer` 요소·렌즈 대상·GSAP 로 움직이는 요소에는 걸지 말고, 내용을 안쪽 요소로 감싸 거기에 건다. 색 갈라짐은 알파가 있는 모양(글자·스프라이트)에서만 보인다.
 
 ## 시간 재매핑 (되감기·정지)
 ```js
@@ -30,6 +30,7 @@ MH.drive(tl, DUR, t => draw(remap(t)));       // 0~2 재생 · 2~3 정지 · 3~4
 ```
 - 같은 tIn 이 이어지면 정지, 줄어들면 되감기. 키는 유한한 숫자 쌍 2개 이상.
 - 무대(stage)는 `st.remap(fn)` 으로 같은 함수를 건다.
+- remap 한 draw 안의 sim/follow 는 맞게 나오지만 되감는 동안 0 부터 다시 계산한다. vhs·glitch 에는 remap 한 t 가 아니라 장면 t 를 넘긴다.
 
 ## 게이트
 ② 효과라서 효과 표에 레퍼런스 근거(또는 ③ 사용자 지정)가 없으면 make 가 렌더 전에 멈춘다.

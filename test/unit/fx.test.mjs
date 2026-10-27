@@ -51,7 +51,7 @@ test('vhsLabel: 첫 키 앞은 빈 문자열, 정렬 안 된 키·같은 t 는 �
 });
 
 // ── vhs ──
-const build = opts => { const { doc, el } = makeEl(); const W = loadRuntime(RT, { document: doc }); const v = W.MH.fx.vhs(el, opts); return { el, v, root: el.children[0] }; };
+const build = (opts, size) => { const { doc, el } = makeEl(); if (size) Object.assign(el, size); const W = loadRuntime(RT, { document: doc }); const v = W.MH.fx.vhs(el, opts); return { el, v, root: el.children[0] }; };
 const parts = root => { const [scan, band, label, tc] = root.children; return { scan, band, label, tc }; };
 
 test('vhs: 오버레이는 한 번만 만들어지고 render 는 만들지 않는다', () => {
@@ -137,4 +137,29 @@ test('glitch: amount 0 은 transform·filter·clipPath 를 지운다', () => {
   MH.fx.glitch(1, e, { amount: 1 }); assert.ok(e.style.transform);
   MH.fx.glitch(1, e, { amount: 0 });
   assert.equal(e.style.transform, ''); assert.equal(e.style.filter, ''); assert.equal(e.style.clipPath, '');
+});
+
+// ── 리뷰 1차 ──
+test('vhs: 글자 그림자에 어두운 층이 있고 color 옵션이 적용된다', () => {
+  const a = build({}), { label, tc } = parts(a.root);
+  assert.equal(label.style.color, '#fff');
+  for (const e of [label, tc]) { assert.match(e.style.textShadow, /0 0 6px rgba\(0,0,0,\.85\)/); assert.match(e.style.textShadow, /rgba\(255,0,0/); }
+  const b = build({ color: '#111' }), p = parts(b.root);
+  assert.equal(p.label.style.color, '#111'); assert.equal(p.tc.style.color, '#111');
+});
+test('vhs: 글자 크기는 짧은 변 기준 (세로 1080x1920 도 1080 변)', () => {
+  const land = parts(build({}, { clientWidth: 1920, clientHeight: 1080 }).root).label.style;
+  const port = parts(build({}, { clientWidth: 1080, clientHeight: 1920 }).root).label.style;
+  assert.equal(land.fontSize, '49px'); assert.equal(port.fontSize, land.fontSize); assert.equal(port.top, land.top);
+});
+test('vhs: 크기가 없는 el 은 MH.screenSize() 로 대신한다 (#root 1080x1920)', () => {
+  const { doc, el } = makeEl(); el.clientWidth = 0; el.clientHeight = 0;
+  const root = { getAttribute: k => ({ 'data-width': '1080', 'data-height': '1920' })[k] };
+  doc.getElementById = id => (id === 'root' ? root : null);
+  const W = loadRuntime(RT, { document: doc }); W.MH.fx.vhs(el, {});
+  assert.equal(el.children[0].children[2].style.fontSize, '49px');
+});
+test('vhs: 트래킹 띠는 양쪽으로 12px 넘쳐 가장자리 틈이 없다', () => {
+  const { band } = parts(build({}).root);
+  assert.equal(band.style.left, '-12px'); assert.equal(band.style.width, 'calc(100% + 24px)');
 });
