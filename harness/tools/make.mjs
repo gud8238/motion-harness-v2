@@ -2,7 +2,8 @@
 //   node make.mjs .                → (지금 연 폴더가 프로젝트) out/<폴더이름>.mp4
 //   node make.mjs 모션1            → out/모션1.mp4, out/poster.jpg, (자막 있으면) out/모션1.srt, work/qc.jpg, work/render.json
 //   node make.mjs 모션1 --draft    → out/draft.mp4 (빠른 확인용, 15fps 저화질)
-//   node make.mjs 모션1 --check    → 검사만 (렌더 안 함)
+//   node make.mjs 모션1 --check    → 검사 + 게이트만 (렌더 안 함)
+// 게이트: 장면이 ② 스타일 효과를 쓰는데 효과 표에 레퍼런스 근거가 없으면 렌더 전에 멈춘다 (gate.mjs)
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
@@ -37,6 +38,10 @@ for (const f of [...errors, ...warns].slice(0, 20)) console.log(`  ${f.severity 
 writeJSON(path.join(work, 'check.json'), { ok: chk.ok, errors, warnings: warns });
 if (errors.length) die(`검사 오류 ${errors.length}개 — 고친 뒤 다시 실행 (work/check.json)`);
 console.log(`  검사 통과 (경고 ${warns.length}개) ${sec()}`);
+
+// 2b) 게이트: ② 스타일 효과는 레퍼런스 근거 필수 (--check 에서도 검사)
+const gate = spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'gate.mjs'), proj], { stdio: 'inherit' });
+if (gate.status !== 0) die('게이트 위반 — 위 안내대로 고친 뒤 다시 실행');
 if (opt.check) process.exit(0);
 
 // 3) 렌더

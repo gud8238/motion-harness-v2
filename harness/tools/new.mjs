@@ -8,6 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ROOT, HARNESS, DATA, parseArgs, die, ensureDir, hosts } from './_common.mjs';
+import { briefTemplate } from './lib/brief.mjs';
 
 const { pos, opt } = parseArgs();
 const arg = pos[0];
@@ -81,40 +82,7 @@ const refFiles = fs.readdirSync(path.join(dir, 'ref')).filter(f => fs.statSync(p
 // 4) 브리프
 const brief = path.join(dir, 'brief.md');
 const curSize = readSize(fs.readFileSync(idxFile, 'utf8')) || [1920, 1080];
-if (!fs.existsSync(brief)) fs.writeFileSync(brief, `# ${name} — 브리프
-
-> 비워 둔 칸은 Claude가 기본값으로 채웁니다. 채팅으로 말해도 됩니다.
-
-## 주제
-(한 줄)
-
-## 전달할 내용
-(핵심 메시지 3~5줄. 화면에 꼭 나올 문구가 있으면 따옴표로)
-
-## 레퍼런스
-- 주 레퍼런스: (ref/ 의 파일명, 라이브러리 ID(예: lemo:swiss-motion), jasonzhu.ai 링크, 또는 "추천해줘")
-- 보조 레퍼런스(선택): (파일명 — 가져올 항목만. 예: "전환 방식만")
-
-## 형식
-- 길이: 20초        (기본 15~30초)
-- 화면: ${aspectOf(curSize).padEnd(10)}(16:9 / 9:16 / 1:1 / 4:5)
-- 내레이션: 없음    (없음 / 한국어 TTS 여성 / 한국어 TTS 남성 / 직접 녹음 → source/ 에 파일)
-- 자막: 내레이션이 있으면 자동
-- 음악: 기본        (기본 = 효과음 + 간단한 비트 / 없음 / source/ 의 음악 파일명)
-
-## 색 지정 (선택 — 비우면 레퍼런스 팔레트를 따름)
-- 배경: (예: 남색 #1B2A4A / 그라데이션 / 종이 질감 / 3D 공간)
-- 강조색: (예: 학교 상징색 #F2A900)
-- 글자색:
-
-## 소스 이미지 활용
-- 방식: 혼합        (스타일로 다시 그리기 / 사진 그대로(배경 제거) / 3D 턴테이블(여러 각도 사진) / 혼합)
-- 사진 사용 권리: 있음
-- 메모: (예: 정면 사진이 메인, 학생 얼굴은 나오지 않게)
-
-## 꼭 넣을 것 / 피할 것
--
-`);
+if (!fs.existsSync(brief)) fs.writeFileSync(brief, briefTemplate(name, aspectOf(curSize)));
 
 const list = (a, n = 6) => a.length ? a.slice(0, n).join(', ') + (a.length > n ? ` 외 ${a.length - n}개` : '') : '(비어 있음)';
 console.log(`${fresh ? '✔ 프로젝트 준비' : '✔ 프로젝트 갱신'}: ${here ? `지금 폴더 (${name})` : `${name}/`} · 화면 ${curSize.join('x')} (${aspectOf(curSize)})
