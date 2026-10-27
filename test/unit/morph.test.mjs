@@ -179,11 +179,27 @@ test('catalog: morph.shape api includes morph.many( (R14)', () => {
   assert.deepEqual(e.api, ['morph.shape(', 'morph.many(']);
 });
 
+// 엄격한 파서: 명령 문자와 공백으로만 자르고, 숫자 토큰은 정확히 -?\d+(\.\d+)? 이어야 한다
+const strict = (d, glued = false) => {   // glued: 원본(opentype 출력)은 '-' 를 구분자로 붙여 쓰므로 '-' 앞에서도 자른다(SVG 표준)
+  const tk = (glued ? d.replace(/-/g, ' -') : d).replace(/([A-Za-z])/g, ' $1 ').trim().split(/\s+/), cmds = [], nums = [];
+  for (const q of tk) { if (/^[A-Za-z]$/.test(q)) cmds.push(q); else { assert.match(q, /^-?\d+(\.\d+)?$/, `bad number token ${q} in ${d}`); nums.push(+q); } }
+  return { cmds: cmds.join(''), nums };
+};
+const bbox = (d, glued) => { const { nums: v } = strict(d, glued); const xs = v.filter((_, i) => i % 2 === 0), ys = v.filter((_, i) => i % 2 === 1); return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2, n: v.length }; };
+
+test('split(d, s): synthetic glued-minus path re-parses to exactly the scaled numbers', () => {
+  const r = MH.morph.split('M0 0L9 0L9 9Z M2 5C4 6 8-1 3 9Z', 0.5).holes[0];
+  const p = strict(r);
+  assert.equal(p.cmds, 'MCZ');
+  // bbox x 2..8, y -1..9 → centre (5, 4); 각 점 = c + (v - c)/2
+  assert.deepEqual(p.nums, [3.5, 4.5, 4.5, 5, 6.5, 1.5, 4, 6.5]);
+  assert.equal(MH.morph.split('M0 0L9 0L9 9Z M2 5C4 6 8-1 3 9Z', 1).holes[0], 'M2 5C4 6 8-1 3 9Z');
+});
+
 test('split(d, s): holes scale about their bbox centre; s=1 is the original string', async () => {
   const M = load({ fetch: stubFetch() });
   const [o] = await M.morph.text('o', { size: 300, x: 40, y: 400 });
-  const bbox = d => { const v = (d.match(/-?\d*\.?\d+/g) || []).map(Number); const xs = v.filter((_, i) => i % 2 === 0), ys = v.filter((_, i) => i % 2 === 1); return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2 }; };
-  const h1 = M.morph.split(o).holes, base = bbox(h1[0]);
+  const h1 = M.morph.split(o).holes, base = bbox(h1[0], true);
   assert.ok(base.w > 20 && base.h > 20);
   assert.deepEqual(Array.from(M.morph.split(o, 1).holes), Array.from(h1));
   assert.equal(M.morph.split(o, 0.5).outer, M.morph.split(o).outer);
@@ -193,4 +209,18 @@ test('split(d, s): holes scale about their bbox centre; s=1 is the original stri
   assert.ok(Math.abs(half.w - base.w / 2) < 0.2 && Math.abs(half.h - base.h / 2) < 0.2, JSON.stringify([half, base]));
   assert.ok(Math.abs(half.cx - base.cx) < 0.2 && Math.abs(half.cy - base.cy) < 0.2);
   assert.equal((M.morph.split(o, 0.5).holes[0].match(/M/g) || []).length, 1);
+});
+
+test('split(d, s): glyph hole straddling the origin keeps command sequence and number count', async () => {
+  const M = load({ fetch: stubFetch() });
+  const [o] = await M.morph.text('o', { size: 300, x: 0, y: 100 });
+  const h = M.morph.split(o).holes[0], b = bbox(h, true), p1 = strict(h, true);
+  assert.ok(/\d-\d/.test(h), 'original glues minus signs');
+  assert.ok(b.cy - b.h / 2 < 0 && b.cy + b.h / 2 > 0, 'hole straddles y=0: ' + JSON.stringify(b));
+  for (const s of [0, 0.5, 0.25]) {
+    const r = strict(M.morph.split(o, s).holes[0]);
+    assert.equal(r.cmds, p1.cmds); assert.equal(r.nums.length, p1.nums.length);
+    const bb = bbox(M.morph.split(o, s).holes[0]);
+    assert.ok(Math.abs(bb.w - b.w * s) < 0.2 && Math.abs(bb.h - b.h * s) < 0.2 && Math.abs(bb.cx - b.cx) < 0.2 && Math.abs(bb.cy - b.cy) < 0.2, s + JSON.stringify([bb, b]));
+  }
 });

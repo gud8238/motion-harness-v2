@@ -37,14 +37,15 @@ function roundRect(x, y, w, h, r = 0) {
 // 경로 → 바깥 윤곽(첫 부분경로)과 구멍들(나머지). 글자 'o' → 바깥 1 + 구멍 1.
 // 구멍은 모핑하지 않는다: s(0..1) 로 각 구멍을 제 숫자 bbox 중심에서 s 배 줄여, 바깥 윤곽 뒤에 이어 붙여 evenodd 로 그린다 (배경이 비쳐 보임).
 // toPathData 는 절대좌표 M/L/C/Q/Z 만 내므로 숫자를 (x,y) 쌍으로 보고 스케일하면 된다. s=1 이면 원래 문자열 그대로.
-const NUM = /-?\d*\.?\d+/g;
+const TOK = /[a-zA-Z]|-?\d*\.?\d+/g;
 function scaleHole(d, s) {
   if (s === 1) return d;
-  const v = d.match(NUM).map(Number);
+  const tk = d.match(TOK), v = tk.filter(q => !/[a-zA-Z]/.test(q)).map(Number);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (let i = 0; i + 1 < v.length; i += 2) { x0 = Math.min(x0, v[i]); x1 = Math.max(x1, v[i]); y0 = Math.min(y0, v[i + 1]); y1 = Math.max(y1, v[i + 1]); }
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; let k = 0;
-  return d.replace(NUM, m => { const c = k++ % 2 ? cy : cx; return n3(c + (+m - c) * s); });
+  // 토큰마다 공백으로 이어 붙인다 — 줄어든 값이 앞 숫자에 붙어 '6.51.5' 처럼 읽히는 것을 막는다
+  return tk.map(q => { if (/[a-zA-Z]/.test(q)) return q; const c = k++ % 2 ? cy : cx; return n3(c + (+q - c) * s); }).join(' ');
 }
 function split(d, s = 1) {
   const parts = String(d).split(/(?=[Mm])/).map(q => q.trim()).filter(Boolean);
