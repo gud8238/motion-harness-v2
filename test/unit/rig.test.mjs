@@ -303,12 +303,12 @@ test('layout hides open eyes during blink', () => {
   assert.equal(open.eyes_open.visible, true); assert.equal(open.eyes_closed.visible, false);
 });
 test('child part follows parent transform', () => {
-  const L = byName(lay([[0, 'nod', { amt: 20, dur: 1 }], [0, 'walk', { to: [100, 0], steps: 2, dur: 1 }]], 0.5));
   const A = byName(MH.rig.layout(R, { ...MH.rig.pose(PD, [], 0, OFF), x: 50, y: 20, rot: 10, sx: 1, sy: 1, limbs: [0, 0] }));
   assert.ok(A.body.transform.startsWith('translate(50 20) rotate(10)'));
   assert.ok(A.limb0.transform.startsWith(A.body.transform), A.limb0.transform);
   assert.ok(A.limb0.transform.length > A.body.transform.length);
-  assert.ok(L.limb0.transform.startsWith(L.body.transform));
+  const W = byName(lay([[0, 'nod', { amt: 20, dur: 1 }], [0, 'walk', { to: [100, 0], steps: 2, dur: 1 }]], 0.5));   // 움직이는 중에도
+  assert.ok(W.limb0.transform.startsWith(W.body.transform) && W.eyes_open.transform.startsWith(W.body.transform));
   assert.equal(A.body.transform, 'translate(50 20) rotate(10) translate(-200 -160)');
   assert.equal(A.limb0.transform, `${A.body.transform} translate(10 180) translate(-30 -10)`);   // 부모 pivot(200,160) + at(-190,20), 자기 pivot 만큼 되돌림
 });
@@ -352,11 +352,15 @@ test('limbs swing from pose.limbs; sweat part follows pose.sweat', () => {
   assert.match(custom.limb1.transform, /rotate\(30\)/); assert.doesNotMatch(custom.limb0.transform, /rotate\(30\)/);
 });
 test('parts rig: body size comes from the root part, bad rigs are rejected in Korean', () => {
-  assert.deepEqual(Array.from(PD.body && [PD.body.w, PD.body.h]), [400, 320]);
-  assert.throws(() => MH.rig.normalize({ kind: 'parts', parts: [{ name: 'a', src: 'a.png', parent: null }] }), /size/);
-  assert.throws(() => MH.rig.normalize({ kind: 'parts', size: [1, 1], parts: [{ name: 'a', src: 'a.png', parent: 'b' }] }), /루트/);
-  assert.throws(() => MH.rig.normalize({ kind: 'parts', size: [1, 1], parts: [{ name: 'a', src: 'a', parent: null }, { name: 'b', src: 'b', parent: 'c' }] }), /parent/);
-  assert.throws(() => MH.rig.normalize({ kind: 'parts', size: [1, 1], parts: [{ name: 'a', src: 'a', parent: null }, { name: 'b', src: 'b', parent: 'c' }, { name: 'c', src: 'c', parent: 'b' }] }), /순환/);
+  assert.deepEqual([PD.body.w, PD.body.h], [400, 320]);
+  const pv = { pivot: [0, 0] }, bad = (parts, extra) => () => MH.rig.normalize({ kind: 'parts', ...extra, parts });
+  assert.throws(bad([{ name: 'a', src: 'a.png', parent: null, ...pv }]), /size/);
+  assert.throws(bad([{ name: 'a', src: 'a.png', parent: 'b', ...pv }], { size: [1, 1] }), /루트/);
+  assert.throws(bad([{ name: 'a', src: 'a', parent: null, ...pv }, { name: 'b', src: 'b', parent: 'c', ...pv }], { size: [1, 1] }), /parent/);
+  assert.throws(bad([{ name: 'a', src: 'a', parent: null, ...pv }, { name: 'b', src: 'b', parent: 'c', ...pv }, { name: 'c', src: 'c', parent: 'b', ...pv }], { size: [1, 1] }), /순환/);
+  assert.throws(bad([{ name: 'a', src: 'a', parent: null, ...pv }, { name: 'a', src: 'b', parent: 'a', ...pv }], { size: [1, 1] }), /겹칩니다: 'a'/);
+  assert.throws(bad([{ name: 'a', src: 'a', parent: null, ...pv }, { name: 'b', src: 'b', parent: null, ...pv }], { size: [1, 1] }), /하나여야/);
+  assert.throws(bad([{ name: 'a', src: 'a', parent: null }], { size: [1, 1] }), /pivot/);
   assert.throws(() => MH.rig.layout(D, MH.rig.pose(D, [], 0, OFF)), /parts/);
 });
 test('grow fills portrait screen', () => {
@@ -364,7 +368,7 @@ test('grow fills portrait screen', () => {
   assert.ok(p.sx * PD.body.h >= Math.hypot(1080, 1920) * 0.99);   // 짧은 변(320) 기준 R9
   assert.equal(p.x, 540); assert.equal(p.y, 960);
   const q = byName(MH.rig.layout(R, p));
-  assert.ok(q.body.transform.startsWith(`translate(540 960) scale(${p.sx} ${p.sy})`) || q.body.transform.startsWith('translate(540 960)'));
+  assert.match(q.body.transform, /^translate\(540 960\) scale\(6\.\d+ 6\.\d+\) translate\(-200 -160\)$/);
 });
 test('parts actor: SVG images are created once, canvas draws with drawImage, loads register buildReady', async () => {
   const loaded = [];
@@ -400,4 +404,70 @@ test('parts image load failure rejects buildReady in Korean', async () => {
   R2.MH.rig.actor(fakeSVG().root, R, { life: false });
   await assert.rejects(R2.__hf.buildReady['rig:assets/actors/hero/body.png'], /불러오지 못했습니다/);
 });
-test('rig2d.md size', () => assert.ok(fs.statSync('harness/modules/rig2d.md').size <= 3072));
+
+
+// ── 리뷰 1차 수정 (파츠 이미지 로딩) ──
+const sizeless = { ...R, parts: R.parts.map(q => (q.name === 'body' ? q : { ...q, size: undefined })) };
+const fakeImage = (log = {}) => class Image {
+  set src(v) { this._s = v; (log.srcs = log.srcs || []).push(v); const fail = (log.fail || []).some(f => v.includes(f)); log.pending = (log.pending || []); log.pending.push(() => { if (fail) this.onerror(); else { this.naturalWidth = 77; this.naturalHeight = 33; this.onload(); } }); if (!log.manual) log.release(); }
+  get src() { return this._s; }
+};
+const imgLog = (o = {}) => { const log = { ...o, pending: [] }; log.release = () => { const f = log.pending.splice(0); Promise.resolve().then(() => f.forEach(x => x())); }; return log; };
+test('sizeless parts become visible after load without an external render call', async () => {
+  const log = imgLog({ manual: true }), { document, root } = fakeSVG();
+  const RT3 = loadRuntime(RT, { document, Image: fakeImage(log) });
+  const a = RT3.MH.rig.actor(root, sizeless, { life: false });
+  a.render(0.5);
+  const eyes = () => root.children[0].children.find(c => c.attrs['data-part'] === 'eyes_open');
+  assert.equal(eyes().attrs.display, 'none');          // 아직 크기를 모른다
+  log.release(); await Promise.all(Object.values(RT3.__hf.buildReady)); await null;
+  assert.equal(eyes().attrs.display, 'inline'); assert.equal(eyes().attrs.width, '77'); assert.equal(eyes().attrs.height, '33');
+});
+test('late image load re-renders the last t, not a stale one', async () => {
+  const log = imgLog({ manual: true }), { document, root } = fakeSVG();
+  const RT3 = loadRuntime(RT, { document, Image: fakeImage(log) });
+  const a = RT3.MH.rig.actor(root, sizeless, { life: false }).act([[0, 'walk', { to: [100, 0], dur: 1 }]]);
+  a.render(0.2); a.render(1.5);
+  log.release(); await Promise.all(Object.values(RT3.__hf.buildReady)); await null;
+  const body = root.children[0].children.find(c => c.attrs['data-part'] === 'body');
+  assert.ok(body.attrs.transform.startsWith('translate(100 0)'), body.attrs.transform);
+});
+test('load() of a parts rig awaits its images and registers buildReady', async () => {
+  const log = imgLog({ manual: true });
+  const fetch = async () => ({ ok: true, json: async () => R });
+  const RT3 = loadRuntime(RT, { fetch, Image: fakeImage(log) });
+  let done = false;
+  const pr = RT3.MH.rig.load('hero').then(j => { done = true; return j; });
+  await new Promise(r => setImmediate(r));
+  assert.equal(done, false); assert.equal(log.srcs.length, 6);   // 서로 다른 이미지 6장 (팔 둘은 같은 파일)
+  assert.ok(Object.keys(RT3.__hf.buildReady).includes('rig:assets/actors/hero/body.png'));
+  log.release();
+  const j = await pr;
+  assert.equal(done, true); assert.equal(j.kind, 'parts');
+  const code = loadRuntime(RT, { fetch: async () => ({ ok: true, json: async () => ({ body: { w: 10 } }) }), Image: fakeImage(imgLog({ manual: true })) });
+  assert.equal((await code.MH.rig.load('blob')).body.w, 10);   // 코드 캐릭터는 이미지 없이 바로
+});
+test('a rejected image leaves the part hidden, warns once, never throws from render', async () => {
+  const log = imgLog({ manual: true, fail: ['eyes_open'] }), warns = [], { document, root } = fakeSVG();
+  const RT3 = loadRuntime(RT, { document, Image: fakeImage(log), console: { warn: m => warns.push(m), log() {} } });
+  const a = RT3.MH.rig.actor(root, R, { life: false });
+  a.render(0.5); log.release();
+  await Promise.all(Object.values(RT3.__hf.buildReady).map(p => p.catch(() => {}))); await null;
+  const el = n => root.children[0].children.find(c => c.attrs['data-part'] === n);
+  assert.equal(el('eyes_open').attrs.display, 'none'); assert.equal(el('body').attrs.display, 'inline');
+  assert.doesNotThrow(() => { a.render(0.6); a.render(0.7); });
+  assert.equal(warns.filter(m => /eyes_open\.png/.test(m)).length, 1);
+  const ctxCalls = [], ctx = { save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, drawImage: img => ctxCalls.push(img.src) };
+  const c = RT3.MH.rig.actor(ctx, R, { life: false }); assert.doesNotThrow(() => c.render(0.5));
+  assert.ok(!ctxCalls.some(s => s.includes('eyes_open')) && ctxCalls.some(s => s.includes('body')));
+  const hf = RT3.__hf.buildReady['rig:assets/actors/hero/eyes_open.png'];
+  await assert.rejects(hf, /불러오지 못했습니다/);
+});
+test('rig2d.md size and prompt placeholders', () => {
+  const md = fs.readFileSync('harness/modules/rig2d.md', 'utf8');
+  assert.ok(Buffer.byteLength(md) <= 3072, String(Buffer.byteLength(md)));
+  for (const k of ['<CHARACTER>', '<STYLE SUFFIX>', 'idle, happy, sweat, squint, star, sad, surprise', 'do NOT draw any labels', 'at least 10% of the canvas width', 'no text, no watermark, no logo']) assert.ok(md.includes(k), k);
+  const m = md.match(/```json\n([\s\S]*?)```/), ex = JSON.parse(m[1]), names = new Set(ex.parts.map(q => q.name));
+  for (const n of [ex.eyesClosed, ex.talkMouth, ...Object.values(ex.faces).flatMap(f => [f.eyes, f.mouth])]) assert.ok(names.has(n), n);
+  assert.doesNotThrow(() => MH.rig.normalize(ex));
+});

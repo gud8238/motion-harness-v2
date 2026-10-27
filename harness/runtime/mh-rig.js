@@ -250,9 +250,14 @@ const partNames = D => [...D.limbs.map((_, i) => 'limb' + i), 'body', ...D.extra
 // 좌표는 모두 이미지(표시 크기) px. pivot = 파츠 이미지 안의 회전 중심, at = 그 중심이 놓일 곳(부모 파츠의 pivot 기준, 루트는 배우 원점 = 몸통 중심 기준).
 // 루트 파츠 size 가 몸통 크기(없으면 rig.size) — grow·hop 이 쓴다. 팔다리 회전은 pose.limbs[i] → 파츠 limb<i> (rig.limbs 가 있으면 그 순서).
 function normalizeParts(d) {
-  const parts = (d.parts || []).map((q, i) => ({ name: q.name, src: q.src, pivot: [q.pivot?.[0] ?? 0, q.pivot?.[1] ?? 0], parent: q.parent ?? null, at: [q.at?.[0] ?? 0, q.at?.[1] ?? 0], z: q.z ?? 0, size: q.size ? [q.size[0], q.size[1]] : null, i }));
-  const byName = new Map(parts.map(q => [q.name, q])), root = parts.find(q => q.parent == null);
+  const parts = (d.parts || []).map((q, i) => {
+    if (!Array.isArray(q.pivot) || q.pivot.length < 2) throw new Error(`MH.rig: 파츠 '${q.name}' 에 pivot: [x, y] (이미지 안 회전 중심) 가 필요합니다.`);
+    return { name: q.name, src: q.src, pivot: [q.pivot[0], q.pivot[1]], parent: q.parent ?? null, at: [q.at?.[0] ?? 0, q.at?.[1] ?? 0], z: q.z ?? 0, size: q.size ? [q.size[0], q.size[1]] : null, i };
+  });
+  const byName = new Map(parts.map(q => [q.name, q])), roots = parts.filter(q => q.parent == null), root = roots[0];
+  if (byName.size !== parts.length) throw new Error(`MH.rig: 파츠 이름이 겹칩니다: '${parts.find((q, i) => parts.findIndex(o => o.name === q.name) !== i).name}'.`);
   if (!root) throw new Error("MH.rig: 파츠 리그에 루트 파츠(parent: null)가 없습니다.");
+  if (roots.length > 1) throw new Error(`MH.rig: 루트 파츠(parent: null)는 하나여야 합니다: ${roots.map(q => `'${q.name}'`).join(', ')}.`);
   for (const q of parts) {
     if (q.parent != null && !byName.has(q.parent)) throw new Error(`MH.rig: 파츠 '${q.name}' 의 parent '${q.parent}' 가 없습니다.`);
     let n = 0; for (let c = q; c.parent != null; c = byName.get(c.parent)) if (++n > parts.length) throw new Error(`MH.rig: 파츠 '${q.name}' 의 parent 가 순환합니다.`);
@@ -304,7 +309,12 @@ function loadImage(src) {
   let e = imgCache.get(src);
   if (!e) {
     const img = typeof Image === 'function' ? new Image() : null;
-    e = { img, ready: img ? new Promise((res, rej) => { img.onload = () => res(img); img.onerror = () => rej(new Error(`파츠 이미지를 불러오지 못했습니다: ${src}`)); img.src = src; }) : Promise.resolve(null) };
+    e = { img, ok: false, failed: false };   // ok = 불러옴, failed = 실패(그 파츠는 그리지 않고 한 번만 경고)
+    e.ready = img ? new Promise((res, rej) => {
+      img.onload = () => { e.ok = true; res(img); };
+      img.onerror = () => { e.failed = true; warnOnce('img:' + src, `MH.rig: 파츠 이미지를 불러오지 못했습니다: ${src} — 이 파츠는 그리지 않습니다.`); rej(new Error(`파츠 이미지를 불러오지 못했습니다: ${src}`)); };
+      img.src = src;
+    }) : Promise.resolve(null);
     e.ready.catch(() => {});
     imgCache.set(src, e);
   }
@@ -321,6 +331,7 @@ function actor(target, design, o = {}) {
   if (!isSVG && !ctx) throw new Error('MH.rig.actor: SVG 요소나 캔버스 2D 컨텍스트를 넘겨 주세요.');
   let actions = [], svg = null;
   const imgs = D.kind === 'parts' ? new Map(D.parts.map(q => [q.name, loadImage(q.src)])) : null;   // 파츠 이미지 (이름 → { img, ready })
+  let lastT = null;   // 마지막으로 그린 t — 이미지가 늦게 도착하면 같은 t 로 한 번 다시 그린다 (결정적)
   const cache = new Map();   // 캔버스 Path2D (d 문자열 → Path2D)
   const set = (el, k, v) => { const c = el.__mh || (el.__mh = {}); if (c[k] !== v) { c[k] = v; el.setAttribute(k, v); } };
   const root = p => P`translate(${p.x} ${p.y}) rotate(${p.rot}) scale(${p.sx} ${p.sy})`;
@@ -363,14 +374,14 @@ function actor(target, design, o = {}) {
     }
     for (const q of L) {
       const el = svg.els.get(q.name), s = partSize(D.byName.get(q.name), imgs.get(q.name).img);
-      if (!s) { set(el, 'display', 'none'); continue; }
+      if (!s || imgs.get(q.name).failed) { set(el, 'display', 'none'); continue; }
       set(el, 'href', q.src); set(el, 'width', s[0]); set(el, 'height', s[1]); set(el, 'transform', q.transform); set(el, 'opacity', q.opacity); set(el, 'display', q.visible ? 'inline' : 'none');
     }
   }
   function drawPartsCanvas(p) {
     for (const q of layout(D, p)) {
       const e = imgs.get(q.name), s = partSize(D.byName.get(q.name), e.img);
-      if (!q.visible || q.opacity <= 0 || !s || !e.img) continue;
+      if (!q.visible || q.opacity <= 0 || !s || !e.ok) continue;
       ctx.save();
       for (const [x, y, r, sx, sy] of q.m) { if (x || y) ctx.translate(x, y); if (r) ctx.rotate(r * Math.PI / 180); if (sx !== 1 || sy !== 1) ctx.scale(sx, sy); }
       ctx.globalAlpha = q.opacity; ctx.drawImage(e.img, 0, 0, s[0], s[1]);
@@ -382,21 +393,24 @@ function actor(target, design, o = {}) {
     act(list) { actions = (list || []).slice().sort((a, b) => a[0] - b[0]); return A; },
     pose: t => pose(D, actions, t, opt),
     render(t) {
-      const p = A.pose(t);
+      const p = A.pose(t); lastT = t;
       if (imgs) { if (isSVG) drawPartsSVG(p); else drawPartsCanvas(p); }
       else { const geo = geometry(D, p); if (isSVG) drawSVG(p, geo); else drawCanvas(p, geo); }
       return p;
     },
     life(on) { opt.life = !!on; return A; },
   };
+  if (imgs) for (const e of new Set(imgs.values())) if (e.img) e.ready.then(() => lastT !== null && A.render(lastT), () => lastT !== null && A.render(lastT));
   return A;
 }
 
-// assets/actors/<name>.json 의 디자인(또는 리그 JSON)을 불러온다.
+// assets/actors/<name>.json 의 디자인(또는 리그 JSON)을 불러온다. kind:'parts' 면 파츠 이미지도 함께.
 function load(name) {
   const url = 'assets/actors/' + name + '.json';
   const fail = why => new Error(`캐릭터 파일을 불러오지 못했습니다: ${url} (${why})`);
-  return Promise.resolve().then(() => fetch(url)).then(r => { if (!r.ok) throw fail('HTTP ' + r.status); return r.json(); }, e => { throw fail(e && e.message || e); });
+  return Promise.resolve().then(() => fetch(url)).then(r => { if (!r.ok) throw fail('HTTP ' + r.status); return r.json(); }, e => { throw fail(e && e.message || e); })
+    // 파츠 리그면 이미지를 모두 미리 불러오고(성공·실패 상관없이 끝날 때까지) 돌려준다 → buildReady[…] = MH.rig.load('main') 으로 충분하다
+    .then(j => (j && j.kind === 'parts' ? Promise.all((j.parts || []).filter(q => q && q.src).map(q => loadImage(q.src).ready.catch(() => {}))).then(() => j) : j));
 }
 
 MH.rig = { FACES, normalize, pose, geometry, layout, actor, load };
