@@ -23,7 +23,7 @@ export function runGate(projDir) {
     const ev = row.evidence;
     if (row.tier == null || ev.invalid) return 'bad-evidence';
     if (ev.user) {
-      const keys = [row.id, ...(byId.get(row.id).ko || [])].map(k => k.toLowerCase());
+      const keys = [row.id, ...(byId.get(row.id).ko || [])].filter(Boolean).map(k => k.toLowerCase());   // 빈 문구는 모든 brief 와 일치하므로 제외
       return keys.some(k => brief.includes(k)) ? null : 'user-not-in-brief';
     }
     const base = path.resolve(work, 'ref-' + ev.ref), img = path.resolve(base, ev.img);
@@ -61,7 +61,9 @@ export function runGate(projDir) {
 
 const WHY = { 'no-row': '효과 표에 이 효과의 행이 없음', 'bad-evidence': '근거 칸을 읽을 수 없음 (형식: <레퍼런스> 0–4.5s (ev_01.png)) 또는 단계 칸이 ①②③ 이 아님', 'missing-image': '근거 이미지 파일이 없음 (work/ref-<레퍼런스>/<이미지>)', 'user-not-in-brief': 'brief.md "효과 지정"에 이 효과가 없음' };
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// 직접 실행일 때만 CLI 동작. Node 는 import.meta.url 을 realpath 로 주지만 argv[1] 은 심볼릭 링크 그대로라 둘 다 realpath 로 비교한다.
+const isMain = () => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMain()) {
   const dir = path.resolve(process.argv[2] || '.');
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) { console.error('✖ 프로젝트 폴더를 찾을 수 없습니다: ' + dir); process.exit(2); }
   const r = runGate(dir);
