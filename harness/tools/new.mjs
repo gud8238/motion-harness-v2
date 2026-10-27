@@ -37,6 +37,7 @@ const readSize = html => { const m = html.match(/id="root"[^>]*?data-width="(\d+
 const NM = path.join(DATA, 'node_modules');
 const libs = [
   [path.join(HARNESS, 'runtime', 'mh.js'), 'mh.js'],
+  [path.join(HARNESS, 'runtime', 'mh-rig.js'), 'mh-rig.js'],
   [path.join(HARNESS, 'runtime', 'mh-three.js'), 'mh-three.js'],
   [path.join(NM, 'three', 'build', 'three.min.js'), 'three.min.js'],
   [path.join(NM, 'gsap', 'dist', 'gsap.min.js'), 'gsap.min.js'],
