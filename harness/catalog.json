@@ -17,7 +17,7 @@
   {"id":"fx.vhs","tier":2,"module":"fx2d","api":["fx.vhs("],"detect":"trackingBand","desc":"비디오테이프처럼 줄 떨림·색 번짐·노이즈를 입힌다","ko":["VHS","비디오테이프"]},
   {"id":"fx.glitch","tier":2,"module":"fx2d","api":["fx.glitch("],"detect":"rowJitter","desc":"화면이 끊기듯 어긋나고 색이 갈라진다","ko":["글리치","화면 깨짐"]},
   {"id":"time.remap","tier":2,"module":"fx2d","api":["time.remap("],"detect":null,"desc":"구간마다 재생 속도를 바꾼다(슬로모션·급가속)","ko":["타임 리맵","슬로모션","속도 조절"]},
-  {"id":"morph.shape","tier":2,"module":"morph","api":["morph.shape(","morph.many("],"detect":"blobContour","desc":"한 도형의 윤곽이 다른 도형으로 부드럽게 변한다","ko":["모핑","모양 변형"]},
+  {"id":"morph.shape","tier":2,"module":"morph","api":["morph.shape(","morph.many(","morph.text("],"detect":"blobContour","desc":"한 도형의 윤곽이 다른 도형으로 부드럽게 변한다","ko":["모핑","모양 변형"]},
   {"id":"morph.text","tier":2,"module":"morph","api":["morph.text("],"detect":"blobContour","desc":"글자 모양이 다른 글자나 도형으로 변한다","ko":["글자 변형","텍스트 모핑"]},
   {"id":"trans.fill","tier":2,"module":"transitions","api":["trans.fill("],"detect":"compositeFill","desc":"도형이 커져 화면을 채우고 다음 배경이 된다","ko":["화면 채움","채움 전환"]},
   {"id":"trans.zoomThrough","tier":2,"module":"transitions","api":["trans.zoomThrough("],"detect":"scaleSpike","desc":"대상 속으로 확대해 들어가며 다음 장면으로 넘어간다","ko":["줌 스루","뚫고 지나가기"]},

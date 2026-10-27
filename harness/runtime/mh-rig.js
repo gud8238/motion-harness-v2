@@ -27,6 +27,7 @@ const DEF = {
   mouth: { shape: 'none' },
 };
 const RESERVED = /^(body|eyeL|eyeR|mouth|cheekL|cheekR|sweat|limb\d+|extra\d+)$/;
+const POSITIONAL = new Set(['enter', 'exit', 'hop', 'walk', 'grow', 'squash', 'stretch']);   // x·y·배율을 바꾸는 동작
 const BLINK = 0.12, SWEAT = '#7EC8F0', CHEEK = '#F4A3A3', SVGNS = 'http://www.w3.org/2000/svg';
 const warned = new Set();
 const warnOnce = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(msg); } };
@@ -70,8 +71,18 @@ function pose(design, actions, t, o = {}) {
   const rest = { x: o.x ?? 0, y: o.y ?? 0, sx: 1, sy: 1, rot: 0, anchor: 0, lx: 0, ly: 0, swing: 0 };   // 일시 동작(nod·shake·걸음 기울기)이 돌아갈 값
   const blinks = [];
   let face = null, talk = null;
-  const list = (actions || []).filter(a => a && a[0] <= t).sort((a, b) => a[0] - b[0]);
-  for (const [ta, name, op] of list) {
+  const offFor = (dir, p) => dir === 'below' ? [p[0], p[1] + H] : dir === 'above' ? [p[0], p[1] - H] : dir === 'left' ? [p[0] - W, p[1]] : dir === 'right' ? [p[0] + W, p[1]] : p;
+  // 첫 위치 동작이 enter 면 그 전에는 등장 출발 자세(화면 밖·배율 0)로 기다린다 — 기본 자리(0,0)에 미리 보이지 않게
+  const all = (actions || []).filter(Boolean).sort((a, b) => a[0] - b[0]);
+  const first = all.find(a => POSITIONAL.has(a[1])), pre = first && first[1] === 'enter' ? first : null;
+  if (pre) {
+    const po = pre[2] && typeof pre[2] === 'object' ? pre[2] : {}, dest = pt(po.at, rest.x, rest.y), dir = po.from ?? 'below';
+    const s = dir === 'scale' ? dest : offFor(dir, dest);
+    ch.x = k(s[0]); ch.y = k(s[1]); if (dir === 'scale') { ch.sx = k(0); ch.sy = k(0); }
+  }
+  const list = all.filter(a => a[0] <= t);
+  for (const a of list) {
+    const [ta, name, op] = a;
     const opts = op && typeof op === 'object' ? op : {};
     const at = key => ch[key](ta);
     const mo = (dur, extra) => Object.assign({ dur, ant: opts.ant, over: opts.over, settle: opts.settle }, extra);
@@ -115,8 +126,8 @@ function pose(design, actions, t, o = {}) {
       case 'nod': { const dur = opts.dur ?? 0.4, amp = opts.amt ?? 8; wobble('rot', s => (s >= dur ? 0 : amp * Math.sin(Math.PI * s / dur) ** 2)); break; }
       case 'shake': { const dur = opts.dur ?? 0.5, amp = opts.amt ?? 6; wobble('rot', s => { const p = s / dur; return p >= 1 ? 0 : amp * Math.sin(6 * Math.PI * p) * (1 - p); }); break; }
       case 'enter': case 'exit': {
-        const here = [at('x'), at('y')], dir = (name === 'enter' ? opts.from : opts.to) ?? 'below', dur = opts.dur ?? 0.6;
-        const off = p => dir === 'below' ? [p[0], p[1] + H] : dir === 'above' ? [p[0], p[1] - H] : dir === 'left' ? [p[0] - W, p[1]] : dir === 'right' ? [p[0] + W, p[1]] : p;
+        const here = a === pre ? [rest.x, rest.y] : [at('x'), at('y')], dir = (name === 'enter' ? opts.from : opts.to) ?? 'below', dur = opts.dur ?? 0.6;
+        const off = p => offFor(dir, p);
         if (name === 'enter') {
           const dest = pt(opts.at, here[0], here[1]);
           Object.assign(rest, { x: dest[0], y: dest[1] });

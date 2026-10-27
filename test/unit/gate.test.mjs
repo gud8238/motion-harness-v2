@@ -231,3 +231,12 @@ test('MH.cam( with no effect row is still no-row and names the new ids', () => {
   const v = r.violations.find(v => v.reason === 'no-row');
   for (const id of ['cam.pan', 'cam.push', 'cam.rotate', 'cam.shake', 'cam.parallax', 'lens.dof', 'lens.rack']) assert.ok(v.id.split('/').includes(id), id);
 });
+// 17c: morph.md 의 '눈 두 개 → 로고 글자' 는 morph.text( 로 글자 윤곽을 불러와 morph.many 로 모핑한다.
+// 감지기는 이 장면을 morph.shape 로만 제안하므로(blobContour), morph.shape 근거로 morph.text( 도 통과해야 한다.
+test('morph.text( glyph loading passes with a morph.shape row (eyes → logo letters)', () => {
+  const code = "const morph = MH.morph;\nmorph.text('moa', { size: 340 }).then(g => g);\nconst ds = morph.many(t, eyes, outers, { t0: 3 });";
+  assert.equal(runGate(camProject(code, '| morph.shape | ② | b 33.25–34.42s (ev_x.png) | s1 |')).ok, true);
+  assert.equal(runGate(camProject(code, '| morph.text | ② | b 33.25–34.42s (ev_x.png) | s1 |')).violations.filter(v => v.file !== 'work/PLAN.md').map(v => v.id).join(), 'morph.shape');
+  const none = runGate(camProject(code, null));
+  assert.deepEqual(none.violations.map(v => [v.id, v.line]), [['morph.shape/morph.text', 3], ['morph.shape', 4]]);
+});

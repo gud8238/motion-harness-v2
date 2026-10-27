@@ -7,7 +7,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { DATA } from '../../harness/tools/_common.mjs';
-import { qcCompare, unplanned, stiffness, STIFF } from '../../harness/tools/motion-qc.mjs';
+import { qcCompare, unplanned, stiffness, STIFF, dnaAccents } from '../../harness/tools/motion-qc.mjs';
 import { pattern } from '../helpers/frames.mjs';
 
 const TOOL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../harness/tools/motion-qc.mjs');
@@ -105,4 +105,40 @@ test('CLI: no checked rows → exit 0, empty json, single-cell image; missing pr
   fs.rmSync(path.join(proj, 'out', `${name}.mp4`));
   const m = run(proj, '.'); assert.equal(m.status, 2); assert.match(m.stderr, /✖/);
   const n = run(proj, path.join(proj, '없는 폴더')); assert.equal(n.status, 2);
+});
+
+// 17c: 우리 영상의 덩어리(공유 요소·모핑)는 우리 DNA 색이다. 레퍼런스 강조색(노랑)만 찾으면 사용자 색(코랄) 캐릭터는 영영 감지되지 않는다.
+test('dnaAccents: vivid hex colours of window.DNA in scene/index.html (dark ink and pastels excluded)', () => {
+  const html = `<script>\n window.DNA = {\n bg: "#ECEEEB", paper: "#FFFFFF", ink: "#0F242E", accent: "#FF7A59", muted: "#AEB8B6",\n pink: "#F1C3D5", sky: "#2D7FF9",\n ease: [0.2, 1, 0.3, 1], bpm: 75 };\n</script>\n<style>:root { --x: #00FF00; }</style>`;
+  assert.deepEqual(dnaAccents(html), ['#FF7A59', '#2D7FF9']);
+  assert.deepEqual(dnaAccents('<html>no dna</html>'), []);
+  assert.deepEqual(dnaAccents("window.DNA = { accent: '#e8442e' };"), ['#E8442E']);
+});
+// 17c: 컷·채움 감지기는 0.1~0.2 초짜리 후보를 낸다(B 의 채움 6.67–6.75). 후보가 0.5 초보다 짧으면 후보 전체가 구간 안에 있을 때 통과
+test('qcCompare: a short candidate (instant fill/match cut) fully inside the range passes', () => {
+  const row = { id: 'trans.fill', tier: 2, where: 'a' }, f = (t0, t1) => ({ id: 'trans.fill', t0, t1 });
+  assert.equal(qcCompare([row], { a: [[6.6, 7.9]] }, [f(7.0, 7.17)])[0].ok, true);
+  assert.equal(qcCompare([row], { a: [[6.6, 7.9]] }, [f(7.8, 8.0)])[0].ok, false);    // 절반만 안
+  assert.equal(qcCompare([row], { a: [[6.6, 7.9]] }, [f(8.0, 8.1)])[0].ok, false);
+});
+// 17c: trans.shared 감지기는 컷이 2개 이상이어야 돈다. 원테이크 무대 + 장면 하나(컷 1개)인 우리 영상에서는 ✗ 가 아니라 ? (눈 확인)
+test('qcCompare: trans.shared with fewer cuts than the detector needs is ? not ✗', () => {
+  const row = { id: 'trans.shared', tier: 2, where: 'a' };
+  assert.equal(qcCompare([row], { a: [[0, 21]] }, [], undefined, { cuts: [14.5] })[0].ok, null);
+  assert.equal(qcCompare([row], { a: [[0, 21]] }, [], undefined, { cuts: [5, 14.5] })[0].ok, false);
+  assert.equal(qcCompare([row], { a: [[0, 21]] }, [])[0].ok, false);   // 컷 정보가 없으면 예전대로
+});
+// 17c: 사용 위치 'st1 b5, s2' 처럼 맞닿은 구간은 한 구간 — 컷을 가로지르는 짧은 후보(매치 컷 14.42–14.58)가 두 쪽에 나뉘어 떨어지지 않게
+test('qcCompare: touching ranges of one row are merged (cut-straddling short candidate passes)', () => {
+  const row = { id: 'trans.match', tier: 2, where: 'a' }, f = (t0, t1) => ({ id: 'trans.match', t0, t1 });
+  assert.equal(qcCompare([row], { a: [[12.2, 14.5], [14.5, 21]] }, [f(14.42, 14.58)])[0].ok, true);
+  assert.equal(qcCompare([row], { a: [[12.2, 14.4], [14.6, 21]] }, [f(14.42, 14.58)])[0].ok, false);
+});
+// 17c: qc-motion.png 의 '우리 영상' 줄은 감지된 자리를 보여야 한다(사용 위치 처음이 아니라) — 행에 at = 맞은 후보 구간(사용 위치 안으로 자름)
+test('qcCompare: a matched row carries the matched candidate span (clipped to the range)', () => {
+  const row = { id: 'morph.shape', tier: 2, where: 's2' };
+  const r = qcCompare([row], { s2: [[14.5, 21]] }, [{ id: 'morph.shape', t0: 16.92, t1: 17.75 }])[0];
+  assert.equal(r.ok, true); assert.deepEqual(r.at, [16.92, 17.75]);
+  assert.deepEqual(qcCompare([row], { s2: [[14.5, 21]] }, [{ id: 'morph.shape', t0: 14, t1: 15 }])[0].at, [14.5, 15]);
+  assert.equal(qcCompare([row], { s2: [[14.5, 21]] }, [])[0].at, undefined);
 });

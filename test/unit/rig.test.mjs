@@ -479,3 +479,14 @@ test('grow never makes sx/sy negative (ant 0 for scale)', () => {
   const W = loadRuntime(RT); W.DNA = { motion: { ant: 0.5, over: 0.08, settle: 0.35 } };   // 큰 예비동작 DNA 에서도
   for (let i = 0; i <= 240; i++) { const p = W.MH.rig.pose(D, A, i / 120, { life: false, W: 1000, H: 500 }); assert.ok(p.sx > 0 && p.sy > 0, `t=${i / 120} sx=${p.sx}`); }
 });
+test('before a later first enter the actor waits at the entry start (not visible at 0,0)', () => {
+  const O = { life: false, W: 1920, H: 1080 };
+  const below = [[0.3, 'blink'], [0.8, 'enter', { from: 'below', at: [960, 740] }]];
+  for (const t of [0, 0.5, 0.79]) { const p = MH.rig.pose(D, below, t, O); assert.equal(p.x, 960); assert.ok(p.y >= 740 + 1080, `t=${t} y=${p.y}`); }
+  assert.equal(MH.rig.pose(D, below, 3, O).y, 740);
+  const sc = [[2.3, 'enter', { from: 'scale', at: [1060, 600] }]];
+  const p0 = MH.rig.pose(D, sc, 1, O); assert.equal(p0.sx, 0); assert.equal(p0.sy, 0); assert.equal(p0.x, 1060);
+  const p1 = MH.rig.pose(D, sc, 5, O); assert.equal(p1.sx, 1); assert.equal(p1.x, 1060);
+  // 첫 위치 동작이 enter 가 아니면 그대로 (기본 자리에서 시작)
+  assert.equal(MH.rig.pose(D, [[1, 'hop', { to: [300, 0] }], [3, 'enter', { from: 'left', at: [10, 10] }]], 0.5, O).x, 0);
+});

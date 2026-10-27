@@ -76,7 +76,7 @@ export function mergeCuts(lists, dur, fps = 30) {
   return out.map(o => +o.t.toFixed(2)).sort((a, b) => a - b);
 }
 
-const vivid = hex => { const v = parseInt(String(hex).replace('#', ''), 16); if (!Number.isFinite(v)) return true; const L = toLab([(v >> 16) & 255, (v >> 8) & 255, v & 255]); return Math.hypot(L[1], L[2]) >= TH.accentChroma; };   // 읽을 수 없는 값은 감지기에 넘겨 실패로 보고
+export const vivid = hex => { const v = parseInt(String(hex).replace('#', ''), 16); if (!Number.isFinite(v)) return true; const L = toLab([(v >> 16) & 255, (v >> 8) & 255, v & 255]); return Math.hypot(L[1], L[2]) >= TH.accentChroma; };   // 읽을 수 없는 값은 감지기에 넘겨 실패로 보고
 
 // ffmpeg 원시 디코드 두 번(회색 160폭·RGB 96폭, 12fps)으로 프레임별 감지기 값을 잰다.
 // opts: { cuts, accents(hex[]), failed(배열 — 실패한 감지기 이름이 들어감), detectors(테스트용 대체) }

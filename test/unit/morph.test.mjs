@@ -174,9 +174,9 @@ test('MH.easeOf / MH.checkEase are shared helpers', () => {
   for (const file of ['mh-cam.js', 'mh-morph.js']) assert.ok(!/const EASES/.test(fs.readFileSync('harness/runtime/' + file, 'utf8')), file);
 });
 
-test('catalog: morph.shape api includes morph.many( (R14)', () => {
+test('catalog: morph.shape api includes morph.many( (R14) and the glyph loader morph.text( (17c)', () => {
   const e = JSON.parse(fs.readFileSync('harness/catalog.json', 'utf8')).find(x => x.id === 'morph.shape');
-  assert.deepEqual(e.api, ['morph.shape(', 'morph.many(']);
+  assert.deepEqual(e.api, ['morph.shape(', 'morph.many(', 'morph.text(']);
 });
 
 // 엄격한 파서: 명령 문자와 공백으로만 자르고, 숫자 토큰은 정확히 -?\d+(\.\d+)? 이어야 한다
