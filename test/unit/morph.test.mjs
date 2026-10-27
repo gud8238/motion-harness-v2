@@ -188,12 +188,12 @@ const strict = (d, glued = false) => {   // glued: 원본(opentype 출력)은 '-
 const bbox = (d, glued) => { const { nums: v } = strict(d, glued); const xs = v.filter((_, i) => i % 2 === 0), ys = v.filter((_, i) => i % 2 === 1); return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2, n: v.length }; };
 
 test('split(d, s): synthetic glued-minus path re-parses to exactly the scaled numbers', () => {
-  const r = MH.morph.split('M0 0L9 0L9 9Z M2 5C4 6 8-1 3 9Z', 0.5).holes[0];
+  const r = MH.morph.split('M-1 -2L10 -2L10 10L-1 10Z M2 5C4 6 8-1 3 9Z', 0.5).holes[0];
   const p = strict(r);
   assert.equal(p.cmds, 'MCZ');
   // bbox x 2..8, y -1..9 → centre (5, 4); 각 점 = c + (v - c)/2
   assert.deepEqual(p.nums, [3.5, 4.5, 4.5, 5, 6.5, 1.5, 4, 6.5]);
-  assert.equal(MH.morph.split('M0 0L9 0L9 9Z M2 5C4 6 8-1 3 9Z', 1).holes[0], 'M2 5C4 6 8-1 3 9Z');
+  assert.equal(MH.morph.split('M-1 -2L10 -2L10 10L-1 10Z M2 5C4 6 8-1 3 9Z', 1).holes[0], 'M2 5C4 6 8-1 3 9Z');
 });
 
 test('split(d, s): holes scale about their bbox centre; s=1 is the original string', async () => {
@@ -223,4 +223,32 @@ test('split(d, s): glyph hole straddling the origin keeps command sequence and n
     const bb = bbox(M.morph.split(o, s).holes[0]);
     assert.ok(Math.abs(bb.w - b.w * s) < 0.2 && Math.abs(bb.h - b.h * s) < 0.2 && Math.abs(bb.cx - b.cx) < 0.2 && Math.abs(bb.cy - b.cy) < 0.2, s + JSON.stringify([bb, b]));
   }
+});
+
+// I6: 한글은 글자당 바깥 조각이 여러 개다. 첫 부분경로만 바깥으로 보면 나머지 조각이 '구멍'으로 그려진다.
+test('split: multi-part Hangul glyph 한 → several outers + the ㅎ hole, classified by containment', async () => {
+  const M = load({ fetch: stubFetch() });
+  const [g] = await M.morph.text('한', { size: 400, x: 100, y: 500 });
+  const subs = (g.match(/M/g) || []).length, sp = M.morph.split(g);
+  assert.ok(sp.outers.length >= 3, `outers ${sp.outers.length} of ${subs}`);
+  assert.ok(sp.holes.length >= 1 && sp.holes.length < sp.outers.length, JSON.stringify([sp.outers.length, sp.holes.length]));
+  assert.equal(sp.outers.length + sp.holes.length, subs);
+  assert.equal(sp.outer, Array.from(sp.outers).join(' '));
+  for (const o of sp.outers) assert.equal((o.match(/M/g) || []).length, 1);
+  const boxes = Array.from(sp.outers).map(o => bbox(o, true));
+  for (const h of sp.holes) {                                                  // 구멍마다 그것을 감싸는 바깥 조각이 있다
+    const b = bbox(h, true);
+    assert.ok(boxes.some(o => Math.abs(b.cx - o.cx) < o.w / 2 && Math.abs(b.cy - o.cy) < o.h / 2 && b.w < o.w && b.h < o.h), JSON.stringify(b));
+  }
+  const hs = M.morph.split(g, 0.5).holes, hb = bbox(hs[0], false), h1 = bbox(sp.holes[0], true);
+  assert.ok(Math.abs(hb.w - h1.w / 2) < 0.2, 'hole scaling still works');
+  const ds = Array.from(M.morph.many(0.3, [M.morph.circle(300, 300, 60)], sp.outers, { dur: 0.6 }));   // 1→N 모핑
+  assert.equal(ds.length, sp.outers.length); assert.ok(ds.every(d => !/NaN/.test(d)));
+});
+test('split: nested rings alternate outer/hole/outer; a lone shape has one outer', () => {
+  const sq = (a, b) => `M${a} ${a}L${b} ${a}L${b} ${b}L${a} ${b}Z`;
+  const r = MH.morph.split([sq(0, 100), sq(10, 90), sq(20, 80), sq(200, 300)].join(' '));
+  assert.deepEqual(Array.from(r.outers), [sq(0, 100), sq(20, 80), sq(200, 300)]);
+  assert.deepEqual(Array.from(r.holes), [sq(10, 90)]);
+  assert.deepEqual(Array.from(MH.morph.split(MH.morph.roundRect(0, 0, 50, 40, 8)).outers), [MH.morph.roundRect(0, 0, 50, 40, 8)]);
 });

@@ -31,9 +31,9 @@ function draw(t) { if (!src) return;
   ds.forEach((d, i) => bodies[i].setAttribute('d', d + ' ' + morph.split(src[i], s).holes.join(' '))); }
 ```
 - `morph.text(str, {weight:'extrabold'|'bold', size, x, y})` → `Promise<string[]>` 글자당 경로 하나(공백 제외). 폰트는 한 번만 읽고 `__hf.buildReady['morph:font:<weight>']` 에도 등록. `y` 는 글자 바닥선.
-- `morph.split(d, s = 1)` → `{ outer, holes[] }` 첫 부분경로 / 나머지. `split(d, s)`: 구멍을 중심에서 s 배로.
+- `morph.split(d, s = 1)` → `{ outers[], outer, holes[] }` 포함 관계로 나눔(outer = outers 이음). 한글은 바깥 조각이 여러 개 → `many(t, [a], outers)`. `split(d, s)`: 구멍을 s 배로.
 - `morph.many(t, as, bs, o)` → `string[]`. 개수가 같으면 1:1, 한쪽이 1개면 나누기(1→N)·합치기(N→1), 그 밖은 오류. 1→N 은 t0 이전에도 `a` 그대로가 아니라 `a` 를 N 조각으로 나눈 경로들을 돌려준다.
 
 ## 주의
-- `shape`·`many` 에 넣는 경로는 **닫힌 단일 경로**(`M … Z` 하나). 구멍 있는 글자는 `split().outer` 를 쓴다.
+- `shape`·`many` 에 넣는 경로는 **닫힌 단일 경로**(`M … Z` 하나). 구멍 있는 글자는 `split().outers` 를 쓴다.
 - 모핑 도중 SVG 변형을 바꾸지 않는다. 폰트 `assets/fonts/Pretendard-*.otf` 는 `mv-new` 가 복사한다.
