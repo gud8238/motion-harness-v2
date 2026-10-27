@@ -142,3 +142,14 @@ test('qcCompare: a matched row carries the matched candidate span (clipped to th
   assert.deepEqual(qcCompare([row], { s2: [[14.5, 21]] }, [{ id: 'morph.shape', t0: 14, t1: 15 }])[0].at, [14.5, 15]);
   assert.equal(qcCompare([row], { s2: [[14.5, 21]] }, [])[0].at, undefined);
 });
+// 17c 리뷰: 길이 0 으로 닿기만 한 후보(끝점이 구간 시작과 같음)는 통과하지 않는다 — 최소 0.05초 겹침
+test('qcCompare: a zero-length touch does not pass (≥ 0.05 s overlap)', () => {
+  const row = { id: 'trans.fill', tier: 2, where: 'a' }, f = (t0, t1) => ({ id: 'trans.fill', t0, t1 });
+  assert.equal(qcCompare([row], { a: [[6.6, 7.9]] }, [f(6.5, 6.6)])[0].ok, false);
+  assert.equal(qcCompare([row], { a: [[6.6, 7.9]] }, [f(7.9, 7.9)])[0].ok, false);
+  assert.equal(qcCompare([row], { a: [[6.6, 7.9]] }, [f(6.6, 6.68)])[0].ok, true);
+});
+test('dnaAccents: only the window.DNA object literal, not a later DNA-like name', () => {
+  assert.deepEqual(dnaAccents('window.DNAX = { a: "#FF0000" };'), []);
+  assert.deepEqual(dnaAccents('mywindow.DNA = { a: "#FF0000" };'), []);
+});

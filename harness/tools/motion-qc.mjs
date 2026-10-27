@@ -13,7 +13,7 @@ import { loadCatalog } from './lib/catalog.mjs';
 
 // 딱딱한 움직임 문턱 (전역 움직임 gm, 1프레임 = 1/12초 걸음의 속력, 시계열 px)
 export const STIFF = { linearSpeed: 2, linearDur: 0.5, linearCv: 0.05, stopFrom: 4, stopTo: 0.3 };
-export const MIN_OVERLAP = 0.5;                                  // 계획한 구간과 같은 id 후보가 이만큼(초) 겹쳐야 통과
+export const MIN_OVERLAP = 0.5, MIN_TOUCH = 0.05;   // 계획한 구간과 같은 id 후보가 이만큼(초) 겹쳐야 통과 · 짧은 후보·구간도 MIN_TOUCH 는 겹쳐야(길이 0 으로 닿기만 한 것 제외)
 const EPS = 1e-6;
 
 const catalogById = catalog => new Map((catalog || loadCatalog()).map(e => [e.id, e]));
@@ -35,14 +35,14 @@ export function qcCompare(rows, ranges, found, catalog, opts = {}) {
     if (!e || !e.detect || !rs.length) return { ...base, ok: null };
     if (row.id === 'trans.shared' && opts.cuts && opts.cuts.length < TH.sharedCuts) return { ...base, ok: null, why: `컷 ${opts.cuts.length}개 — 감지에 ${TH.sharedCuts}개↑ 필요` };
     const same = found.filter(c => c.id === row.id);
-    for (const [r0, r1] of rs) for (const c of same) if (overlap(c.t0, c.t1, r0, r1) >= Math.min(MIN_OVERLAP, r1 - r0, c.t1 - c.t0) - EPS) return { ...base, ok: true, at: [Math.max(c.t0, r0), Math.min(c.t1, r1)] };
+    for (const [r0, r1] of rs) for (const c of same) if (overlap(c.t0, c.t1, r0, r1) >= Math.max(MIN_TOUCH, Math.min(MIN_OVERLAP, r1 - r0, c.t1 - c.t0)) - EPS) return { ...base, ok: true, at: [Math.max(c.t0, r0), Math.min(c.t1, r1)] };
     return { ...base, ok: false };
   });
 }
 
 // 우리 영상의 강조색 = scene/index.html 의 window.DNA 에 적힌 HEX 중 채도 높은 것(Lab C* ≥ accentChroma). 사용자 지정 색 캐릭터는 레퍼런스 강조색과 다르다
 export function dnaAccents(html) {
-  const m = /window\.DNA\s*=\s*\{([\s\S]*?)\}\s*;/.exec(String(html || '')); if (!m) return [];
+  const m = /(?:^|[^\w$.])window\.DNA\s*=\s*\{([\s\S]*?)\}\s*;/.exec(String(html || '')); if (!m) return [];
   return [...new Set((m[1].match(/#[0-9a-fA-F]{6}\b/g) || []).map(h => h.toUpperCase()))].filter(vivid);
 }
 
