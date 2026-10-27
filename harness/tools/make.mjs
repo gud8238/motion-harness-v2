@@ -3,6 +3,7 @@
 //   node make.mjs 모션1            → out/모션1.mp4, out/poster.jpg, (자막 있으면) out/모션1.srt, work/qc.jpg, work/render.json
 //   node make.mjs 모션1 --draft    → out/draft.mp4 (빠른 확인용, 15fps 저화질)
 //   node make.mjs 모션1 --check    → 검사 + 게이트만 (렌더 안 함)
+// 모션 검수: 렌더 뒤 같은 감지기를 우리 영상에 돌려 효과 표의 효과가 계획한 자리에 나타나는지 확인 (work/motion-qc.json, work/qc-motion.png, --draft 는 생략, 실패해도 빌드는 유지)
 // 게이트: 장면이 ② 스타일 효과를 쓰는데 효과 표에 레퍼런스 근거가 없으면 렌더 전에 멈춘다 (gate.mjs)
 import fs from 'fs';
 import path from 'path';
@@ -84,3 +85,8 @@ console.log('✔ 완료 ' + JSON.stringify(report));
 if (blacks.length) console.warn('⚠ 검은 화면:', blacks.map(b => b.join('–')).join(', '));
 if (flat.length) console.warn('⚠ 내용이 거의 없는 구간(초):', flat.map(x => x.join('–')).join(', '), '— 의도한 여백이 아니면 board.mjs --times 로 확인');
 if (lufs != null && Math.abs(lufs + 14) > 2) console.warn(`⚠ 음량 ${lufs} LUFS (목표 −14)`);
+// 5) 모션 검수 (효과가 계획한 자리에 있는지 · 계획에 없는 ② 효과 · 딱딱한 움직임). 실패해도 렌더 결과는 그대로 둔다
+if (!draft) {
+  const mq = spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'motion-qc.mjs'), proj], { stdio: 'inherit' });
+  if (mq.status !== 0) console.warn('⚠ 모션 검수를 실행하지 못했습니다 (렌더 결과에는 영향 없음)');
+}

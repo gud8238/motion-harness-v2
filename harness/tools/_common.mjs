@@ -180,9 +180,10 @@ export async function board(items, out, { cols = 3, title = '', cellW = 560, bro
     return `data:image/${ext};base64,` + fs.readFileSync(f).toString('base64');
   };
   const cells = items.map(it => {
-    if (it.pair) return `<div class="c pair"><div class="pp">${it.pair.map(p => `<figure><img src="${toData(p.img)}"><figcaption>${esc(p.cap)}</figcaption></figure>`).join('')}</div><div class="l">${esc(it.label)}</div>${it.sub ? `<div class="s">${esc(it.sub)}</div>` : ''}</div>`;
+    if (it.pair) return `<div class="c pair"><div class="pp${it.stack ? ' stack' : ''}">${it.pair.map(p => `<figure><img src="${toData(p.img)}"><figcaption>${esc(p.cap)}</figcaption></figure>`).join('')}</div><div class="l">${esc(it.label)}</div>${it.sub ? `<div class="s">${esc(it.sub)}</div>` : ''}</div>`;
     if (it.swatches) return `<div class="c sw"><div class="l">${esc(it.label)}</div><div class="bar">${it.swatches.map(s => `<span style="flex:${Math.max(s.pct, 2)};background:${s.hex}" title="${s.hex} ${s.pct}%"><i>${s.hex}<br>${s.pct}%</i></span>`).join('')}</div>${it.sub ? `<div class="s">${esc(it.sub)}</div>` : ''}</div>`;
-    return `<div class="c"><img src="${toData(it.img)}"><div class="l">${esc(it.label)}</div>${it.sub ? `<div class="s">${esc(it.sub)}</div>` : ''}</div>`;
+    const src = toData(it.img);
+    return `<div class="c">${src ? `<img src="${src}">` : ''}<div class="l">${esc(it.label)}</div>${it.sub ? `<div class="s">${esc(it.sub)}</div>` : ''}</div>`;
   }).join('');
   await page.setContent(`<!doctype html><meta charset="utf-8"><style>
     body{margin:0;background:#16181c;color:#eee;font:15px/1.35 'Pretendard','Noto Sans CJK KR','Malgun Gothic',sans-serif;padding:16px}
@@ -190,7 +191,7 @@ export async function board(items, out, { cols = 3, title = '', cellW = 560, bro
     .g{display:grid;grid-template-columns:repeat(${cols},${cellW}px);gap:16px}
     .c{background:#22252b;border-radius:8px;overflow:hidden} .c img{display:block;width:100%}
     .l{padding:8px 10px 2px;font-weight:700} .s{padding:0 10px 10px;color:#b9bdc7;font-size:13px;white-space:pre-wrap}
-    .pair{grid-column:span ${cols}} .pp{display:flex;gap:6px} .pp figure{margin:0;flex:1} .pp figcaption{font-size:12px;color:#99a;padding:3px 6px}
+    .pair{grid-column:span ${cols}} .pp{display:flex;gap:6px} .pp.stack{flex-direction:column} .pp figure{margin:0;flex:1} .pp figcaption{font-size:12px;color:#99a;padding:3px 6px}
     .sw{grid-column:span ${cols}} .bar{display:flex;height:64px;margin:6px 10px 10px;border-radius:6px;overflow:hidden}
     .bar span{display:flex;align-items:flex-end} .bar i{font-style:normal;font-size:10px;padding:2px 3px;color:#fff;mix-blend-mode:difference}
   </style><body>${title ? `<h1>${esc(title)}</h1>` : ''}${note ? `<p class="n">${esc(note)}</p>` : ''}<div class="g">${cells}</div>`);
