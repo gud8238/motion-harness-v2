@@ -6,6 +6,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { DATA } from '../../harness/tools/_common.mjs';
 
 const TOOL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../harness/tools/analyze-ref.mjs');
 function evidenceOf(src, name) {
@@ -19,10 +20,13 @@ function evidenceOf(src, name) {
   for (const c of ev.candidates) assert.ok(fs.existsSync(path.join(proj, 'work', `ref-${name}`, c.strip)), c.strip);
   return ev.candidates;
 }
+// analyze-ref 는 Chromium(playwright, MH_DATA)이 있어야 끝까지 돈다 — 없으면 실패 대신 skip
+const noBrowser = !fs.existsSync(path.join(DATA, 'node_modules', 'playwright', 'index.mjs')) && `playwright 없음 (${DATA})`;
+const skipFor = env => (!process.env[env] && `${env} 없음`) || noBrowser;
 const within = (cs, id, a, b) => cs.some(c => c.id === id && c.t0 >= a && c.t1 <= b);
 const show = cs => cs.map(c => `${c.id} ${c.t0}–${c.t1}`).join(', ');
 
-test('reference B: push, fill, morph, shared', { skip: !process.env.MH2_REF_B && 'MH2_REF_B 없음' }, () => {
+test('reference B: push, fill, morph, shared', { skip: skipFor('MH2_REF_B') }, () => {
   const cs = evidenceOf(process.env.MH2_REF_B, 'b');
   assert.ok(within(cs, 'cam.push', 0, 4), show(cs));
   assert.ok(within(cs, 'trans.fill', 4, 6.5), show(cs));
@@ -30,7 +34,7 @@ test('reference B: push, fill, morph, shared', { skip: !process.env.MH2_REF_B &&
   assert.ok(cs.some(c => c.id === 'trans.shared'), show(cs));
 });
 
-test('reference A: depth of field, VHS', { skip: !process.env.MH2_REF_A && 'MH2_REF_A 없음' }, () => {
+test('reference A: depth of field, VHS', { skip: skipFor('MH2_REF_A') }, () => {
   const cs = evidenceOf(process.env.MH2_REF_A, 'a');
   assert.ok(cs.some(c => c.id === 'lens.dof'), show(cs));
   assert.ok(cs.some(c => c.id === 'fx.vhs'), show(cs));

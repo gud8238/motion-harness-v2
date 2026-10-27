@@ -93,3 +93,8 @@ test('readBeats ignores data-id', () => {
   assert.deepEqual(readBeats('<script type="application/json" data-id="st1-beats">[{"id":"b1","t0":0,"t1":4}]</script>', 'st1'), []);
   assert.deepEqual(readBeats('<script id="st1-beats" type="application/json">[{"id":"b1","t0":0,"t1":4}]</script>', 'st1').length, 1);
 });
+test('auto strip names with id and start time parse (dots, hyphens, underscores)', () => {
+  const r = parseEffectTable('효과 표\n| a | b | c | d |\n|---|---|---|---|\n| trans.fill | ② | b_ref 6.67–7.67s (ev_trans-fill_6.67.png) | s1 |\n| cam.push | ② | b_ref 0.00–2.00s (ev_cam-push_0.00_2.png) | s1 |');
+  assert.deepEqual(r[0].evidence, { ref: 'b_ref', t0: 6.67, t1: 7.67, img: 'ev_trans-fill_6.67.png' });
+  assert.deepEqual(r[1].evidence, { ref: 'b_ref', t0: 0, t1: 2, img: 'ev_cam-push_0.00_2.png' });
+});

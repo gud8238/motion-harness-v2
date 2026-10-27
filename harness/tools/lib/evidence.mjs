@@ -45,7 +45,7 @@ export function measureSeries(file, P, opts = {}) {
   const G = rawFrames(file, { w: gw, h: gh, fps, gray: true }), C = rawFrames(file, { w: cw, h: ch, fps });
   const gs = gw * gh, cs = cw * ch * 3, n = Math.min(Math.floor(G.length / gs), Math.floor(C.length / cs));
   const g = i => G.subarray(i * gs, (i + 1) * gs), c = i => C.subarray(i * cs, (i + 1) * cs);
-  const safe = (name, fn) => { try { return fn(); } catch { if (!failed.includes(name)) failed.push(name); return null; } };
+  const safe = (name, fn) => { try { return fn(); } catch (e) { if (!failed.includes(name)) { failed.push(name); console.error(`⚠ 감지 실패: ${name}: ${e.message}`); } return null; } };
   const motion = (a, b, range = 6) => {
     let m = D.globalMotion(g(a), g(b), gw, gh, { range });
     if (range < 12 && (Math.abs(m.dx) >= TH.remeasure || Math.abs(m.dy) >= TH.remeasure)) m = D.globalMotion(g(a), g(b), gw, gh, { range: 12 });
@@ -73,6 +73,7 @@ export function measureSeries(file, P, opts = {}) {
       blobs: safe('accentBlobs', () => D.accentBlobs(c(i), cw, ch, accents).map(b => ({ ...b, cx: b.cx * sx, cy: b.cy * sy, bbox: [b.bbox[0] * sx, b.bbox[1] * sy, b.bbox[2] * sx, b.bbox[3] * sy] }))),
     });
   }
+  Object.defineProperty(out, 'size', { value: [gw, gh] });   // 시계열 px 기준 크기 — buildCandidates 의 W·H 기본값 (영상 원본 크기를 넘기는 실수 방지)
   return out;
 }
 
@@ -333,8 +334,8 @@ const RULES = {
 };
 
 // 시계열 → 후보. 같은 id 의 0.3초 이내 인접 후보는 병합(사이에 컷이 있으면 병합하지 않음), id 당 score 상위 3개, score 내림차순(같으면 시간순).
-// opts.failed: 예외를 던진 규칙 id 가 들어감 (그 규칙 후보만 빠짐)
-export function buildCandidates(series, cuts = [], dur = 0, W = 160, H = 90, opts = {}) {
+// W·H 는 시계열 px 기준 크기(생략하면 series.size, 없으면 160×90). opts.failed: 예외를 던진 규칙 id 가 들어감 (그 규칙 후보만 빠짐)
+export function buildCandidates(series, cuts = [], dur = 0, W = series?.size?.[0] ?? 160, H = series?.size?.[1] ?? 90, opts = {}) {
   const S = series || [], n = S.length, failed = opts.failed || [];
   if (n < 2) return [];
   const fps = (n - 1) / ((S[n - 1].t - S[0].t) || (n - 1) / TH.fps), T = i => S[i].t;
@@ -349,7 +350,7 @@ export function buildCandidates(series, cuts = [], dur = 0, W = 160, H = 90, opt
     firstAfter: c => { for (let i = 0; i < n; i++) if (T(i) >= c + 0.5 / fps) return i; return -1; },
   };
   const all = [];
-  for (const [id, rule] of Object.entries(RULES)) { try { all.push(...rule(ctx)); } catch { failed.push(id); } }
+  for (const [id, rule] of Object.entries(RULES)) { try { all.push(...rule(ctx)); } catch (e) { failed.push(id); console.error(`⚠ 감지 실패: ${id}: ${e.message}`); } }
   const out = [];
   for (const id of Object.keys(RULES)) {
     const list = all.filter(c => c.id === id).sort((p, q) => p.t0 - q.t0), merged = [];
@@ -395,6 +396,18 @@ export function estimateStrength(energy, fps, peaks, holds = []) {
 // ── 이미지 ──
 export const NO_CANDIDATES = '자동 감지 후보 없음 — 필요하면 strip 명령으로 근거를 만드세요';
 export const evLabel = (name, c) => `${name.replace(/\.png$/, '')} · ${c.id} · ${c.t0.toFixed(2)}–${c.t1.toFixed(2)}s · ${c.signal}`;
+// 효과 표 근거 칸에 그대로 붙여 넣는 문구: "<레퍼런스 이름> t0–t1s (<이미지>)" — 레퍼런스 이름 = work/ref-<이름> 폴더
+export const evidenceCell = (label, t0, t1, img) => `${label} ${t0.toFixed(2)}–${t1.toFixed(2)}s (${img})`;
+// 자동 strip 이름은 id·시작 시각으로 정한다 → 다시 분석해도 같은 후보는 같은 파일 (PLAN.md 효과 표가 계속 유효)
+export const isAutoStrip = f => /^ev_.+\.png$/.test(f) && !/^ev_m\d+\.png$/.test(f);
+export function nameStrips(cands) {
+  const used = new Set();
+  return cands.map(c => {
+    const stem = `ev_${c.id.replace(/\./g, '-')}_${c.t0.toFixed(2)}`; let name = stem + '.png';
+    for (let k = 2; used.has(name); k++) name = `${stem}_${k}.png`;
+    used.add(name); return { ...c, strip: name };
+  });
+}
 
 // 구간 [t0, t1] 을 고르게 6장(양 끝 포함) → board 한 줄(cols 6). 0.5초보다 짧으면 가운데 기준으로 넓힌다.
 export async function stripImage(file, P, t0, t1, out, { browser, title = '', note = '' } = {}) {
@@ -413,8 +426,17 @@ export async function stripImage(file, P, t0, t1, out, { browser, title = '', no
   return out;
 }
 
-// 후보 strip 들을 세로로 한 장(evidence.png). 후보가 없으면 안내 한 칸.
-export async function evidenceBoard(cands, dir, out, { browser, title = '' } = {}) {
-  const items = cands.length ? cands.map(c => ({ img: path.join(dir, c.strip), label: `${c.strip} · score ${c.score}` })) : [{ label: NO_CANDIDATES }];   // 자세한 라벨은 strip 제목에 있다
-  return board(items, out, { cols: 1, cellW: cands.length ? 1100 : 640, browser, title, note: cands.length ? '각 strip 을 보고 후보를 확정·기각한다. 놓친 효과는 analyze-ref strip 명령으로 근거를 만든다' : '' });
+// 후보 strip 들을 세로로 묶은 쪽: evidence.png(1~8번), evidence_2.png(9~16번)… 후보가 없으면 evidence.png 에 안내 한 칸.
+// 이전 실행의 남는 쪽(evidence_N.png)은 지운다. 반환: 쓴 파일 이름 목록
+export const EV_PAGE = 8;
+export async function evidenceBoard(cands, dir, { browser, title = '' } = {}) {
+  const pages = [], n = Math.max(1, Math.ceil(cands.length / EV_PAGE));
+  for (let p = 0; p < n; p++) {
+    const part = cands.slice(p * EV_PAGE, (p + 1) * EV_PAGE), name = p ? `evidence_${p + 1}.png` : 'evidence.png';
+    const items = part.length ? part.map(c => ({ img: path.join(dir, c.strip), label: `${c.strip} · score ${c.score}` })) : [{ label: NO_CANDIDATES }];   // 자세한 라벨은 strip 제목에 있다
+    await board(items, path.join(dir, name), { cols: 1, cellW: part.length ? 1100 : 640, browser, title: n > 1 ? `${title} (${p + 1}/${n}쪽)` : title, note: part.length ? '각 strip 을 보고 후보를 확정·기각한다. 놓친 효과는 analyze-ref strip 명령으로 근거를 만든다' : '' });
+    pages.push(name);
+  }
+  for (const f of fs.readdirSync(dir)) if (/^evidence_\d+\.png$/.test(f) && !pages.includes(f)) fs.rmSync(path.join(dir, f));
+  return pages;
 }

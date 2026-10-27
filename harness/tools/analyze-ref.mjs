@@ -3,11 +3,11 @@
 // node harness/tools/analyze-ref.mjs 모션1 ref/            (ref 폴더의 영상·이미지 전부)
 // node harness/tools/analyze-ref.mjs strip 모션1 ref/참고.mp4 4.6 5.4   (놓친 효과의 근거 strip → work/ref-참고/ev_m01.png)
 // 결과: work/ref-<이름>/ analysis.md, analysis.json, sheet.jpg(1초 간격), shots.png(샷별 대표), motion_N.png(움직임 연속 프레임), palette,
-//       evidence.json·evidence.png(효과 근거 후보) + ev_NN.png(후보별 strip)
+//       evidence.json·evidence.png(효과 근거 후보, 8개 넘으면 evidence_2.png…) + ev_<id>_<시작초>.png(후보별 strip)
 import fs from 'fs';
 import path from 'path';
 import { projectDir, parseArgs, die, ensureDir, ffmpeg, probe, rawFrames, palette, board, chromium, writeJSON, fwd, ROOT } from './_common.mjs';
-import { measureSeries, buildCandidates, estimateStrength, seriesSize, stripImage, evidenceBoard, evLabel, NO_CANDIDATES } from './lib/evidence.mjs';
+import { measureSeries, buildCandidates, estimateStrength, stripImage, evidenceBoard, evLabel, evidenceCell, nameStrips, isAutoStrip, NO_CANDIDATES } from './lib/evidence.mjs';
 
 const { pos, opt } = parseArgs();
 const STRIP = pos[0] === 'strip', args = STRIP ? pos.slice(1) : pos;
@@ -45,7 +45,7 @@ async function stripCommand(file, a0, a1) {
   try { await stripImage(file, P, t0, e1, path.join(out, name), { browser: br, title: `${name.replace(/\.png$/, '')} · ${fmt(t0)}–${fmt(e1)}s · 수동 근거 (${path.basename(file)})` }); }
   finally { await br.close(); }
   console.log(fwd(path.relative(proj, path.join(out, name))));
-  console.log(`  효과 표 근거 칸: ${base} ${fmt(t0)}–${fmt(e1)}s (${name})`);
+  console.log(`  효과 표 근거 칸: ${evidenceCell(base, t0, e1, name)}`);
 }
 
 async function analyzeVideo(file) {
@@ -155,16 +155,16 @@ async function analyzeVideo(file) {
   for (const it of [...(texture._crops || []), ...firstStrip]) fs.rmSync(it.img, { force: true });
   delete texture._crops;
 
-  // 8) 효과 근거표: 감지기 시계열 → 후보 → 후보별 strip(ev_NN.png) + evidence.png 한 장. 감지기가 실패하면 그 신호만 비운다
-  const evFailed = [], [sw, sh] = seriesSize(P);
+  // 8) 효과 근거표: 감지기 시계열 → 후보 → 후보별 strip(ev_<id>_<시작초>.png) + evidence.png. 감지기가 실패하면 그 신호만 비운다
+  const evFailed = [];
   let cands = [];
-  try { cands = buildCandidates(measureSeries(file, P, { cuts, accents: accents.map(a => a.hex), failed: evFailed }), cuts, P.duration, sw, sh, { failed: evFailed }); }
-  catch { evFailed.push('measureSeries'); }
-  for (const f of fs.readdirSync(out)) if (/^ev_\d+\.png$/.test(f)) fs.rmSync(path.join(out, f));   // 이전 실행의 자동 strip (수동 ev_mNN 은 유지)
-  cands = cands.map((c, k) => ({ ...c, strip: `ev_${String(k + 1).padStart(2, '0')}.png` }));
+  try { const series = measureSeries(file, P, { cuts, accents: accents.map(a => a.hex), failed: evFailed }); cands = buildCandidates(series, cuts, P.duration, ...series.size, { failed: evFailed }); }
+  catch (e) { evFailed.push('measureSeries'); console.error(`⚠ 감지 실패: measureSeries: ${e.message}`); }
+  cands = nameStrips(cands);
+  for (const f of fs.readdirSync(out)) if (isAutoStrip(f) && !cands.some(c => c.strip === f)) fs.rmSync(path.join(out, f));   // 사라진 후보의 자동 strip (수동 ev_mNN 은 유지)
   for (const c of cands) await stripImage(file, P, c.t0, c.t1, path.join(out, c.strip), { browser, title: evLabel(c.strip, c) });
-  writeJSON(path.join(out, 'evidence.json'), { ref: fwd(path.relative(proj, file)), candidates: cands });
-  await evidenceBoard(cands, out, path.join(out, 'evidence.png'), { browser, title: `${path.basename(file)} — 효과 근거 후보 ${cands.length}개` });
+  writeJSON(path.join(out, 'evidence.json'), { ref: fwd(path.relative(proj, file)), label: base, candidates: cands });
+  const evPages = await evidenceBoard(cands, out, { browser, title: `${path.basename(file)} — 효과 근거 후보 ${cands.length}개` });
   const strength = estimateStrength(energy, MF, peaks.map(p => p.t), holds);
 
   const A = {
@@ -173,13 +173,13 @@ async function analyzeVideo(file) {
     shots, motion: { perSecond: perSec.map(v => +v.toFixed(4)), spark: spark(perSec), movingPct: Math.round(moving * 100), holds, peaks: peaks.map(p => +fmt(p.t)) },
     color: { palette: pal, accents: accents.map(a => a.hex), meanLuma: Math.round(lum), meanSat: +sat.toFixed(2), ground: lum > 150 ? '밝은 바탕' : lum < 70 ? '어두운 바탕' : '중간 밝기' },
     motionStrength: strength,
-    texture, audio, images: { card: 'card.png', sheet: 'sheet.jpg', shots: 'shots.png', motion: strips, texture: 'texture.png', evidence: 'evidence.png' },
+    texture, audio, images: { card: 'card.png', sheet: 'sheet.jpg', shots: 'shots.png', motion: strips, texture: 'texture.png', evidence: 'evidence.png', evidencePages: evPages },
   };
   writeJSON(path.join(out, 'analysis.json'), A);
   const md = `# 레퍼런스 측정: ${path.basename(file)}
 
 > DNA의 근거. **\`card.png\` 한 장을 직접 보고** DNA를 쓴다 (팔레트·대표 프레임·질감 확대·움직임). 더 필요할 때만: \`sheet.jpg\`(1초 간격 전체), \`shots.png\`, \`texture.png\`, ${strips.map(s => `\`${s}\``).join(', ') || '(움직임 스트립 없음)'}
-> 효과 근거 후보: **\`evidence.png\`** 를 보고 확정·기각 (\`evidence.json\`). 놓친 효과는 \`node harness/tools/analyze-ref.mjs strip <프로젝트> "${fwd(path.relative(proj, file))}" <시작초> <끝초>\`
+> 효과 근거 후보: **${evPages.map(f => `\`${f}\``).join(', ')}** (${evPages.length}쪽) 를 보고 확정·기각 (\`evidence.json\`). 놓친 효과는 \`node harness/tools/analyze-ref.mjs strip <프로젝트> "${fwd(path.relative(proj, file))}" <시작초> <끝초>\`
 
 | 항목 | 측정값 |
 |---|---|
@@ -205,8 +205,8 @@ ${audio ? `| 템포 추정 | ${audio.bpm} BPM (후보 ${audio.bpmCandidates.join
 ## ${oneTake ? '구간 목록 (컷이 거의 없음 → 원테이크·카메라 이동·장면 내 변형형. shots.png 는 균등 12구간)' : '샷 목록'}
 ${shots.slice(0, 60).map(s => `- ${oneTake ? '구간' : '샷'} ${s.i}: ${s.start}–${s.end}s (${s.dur}s)`).join('\n')}${shots.length > 60 ? `\n- … 외 ${shots.length - 60}개` : ''}
 
-## 효과 근거 후보 (evidence.png)
-${cands.map(c => `- ${evLabel(c.strip, c)} (score ${c.score})`).join('\n') || `- ${NO_CANDIDATES}`}${evFailed.map(n => `\n- 감지 실패: ${n}`).join('')}
+## 효과 근거 후보 (${evPages.join(', ')} · ${evPages.length}쪽, 쪽당 8개)
+${cands.map(c => `- ${evLabel(c.strip, c)} (score ${c.score}) → 근거 칸: ${evidenceCell(base, c.t0, c.t1, c.strip)}`).join('\n') || `- ${NO_CANDIDATES}`}${evFailed.map(n => `\n- 감지 실패: ${n}`).join('')}
 `;
   fs.writeFileSync(path.join(out, 'analysis.md'), md);
   console.log(`✔ ${path.relative(ROOT, out)}/analysis.md  · 컷 ${cuts.length} · 평균 샷 ${fmt(mean)}s · 팔레트 ${pal.slice(0, 5).map(c => c.hex).join(' ')}${audio ? ` · ${audio.bpm}BPM` : ''} · 근거 후보 ${cands.length}${evFailed.length ? ` · 감지 실패 ${evFailed.join(', ')}` : ''}`);

@@ -4,7 +4,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { buildCandidates, estimateStrength, measureSeries, seriesSize, TH } from '../../harness/tools/lib/evidence.mjs';
+import { buildCandidates, estimateStrength, measureSeries, seriesSize, nameStrips, isAutoStrip, evidenceCell, TH } from '../../harness/tools/lib/evidence.mjs';
+import { parseEffectTable } from '../../harness/tools/lib/plan.mjs';
 import { probe } from '../../harness/tools/_common.mjs';
 import { pattern } from '../helpers/frames.mjs';
 
@@ -161,4 +162,19 @@ test('measureSeries: a failing detector leaves its field null and is reported', 
   const f = path.join(tmp, 'still.mp4'), P = probe(f), failed = [];
   const s = measureSeries(f, P, { accents: ['not-a-color'], failed, detectors: { accentBlobs: () => { throw new Error('x'); } } });
   assert.ok(s.every(e => e.blobs === null)); assert.deepEqual(failed, ['accentBlobs']);
+});
+test('measureSeries: series.size defaults buildCandidates W·H (not video pixels)', () => {
+  const f = path.join(tmp, 'pan.mp4'), P = probe(f), s = measureSeries(f, P, { cuts: [1.0] });
+  assert.deepEqual(s.size, seriesSize(P)); assert.ok(!Object.keys(s).includes('size'));
+  assert.deepEqual(buildCandidates(s, [1.0], P.duration), buildCandidates(s, [1.0], P.duration, ...seriesSize(P)));
+  assert.notDeepEqual(buildCandidates(s, [], P.duration).map(c => c.id), buildCandidates(s, [], P.duration, P.width * 10, P.height * 10).map(c => c.id));
+});
+test('strip names are stable (id + start), unique, and parse as gate evidence', () => {
+  const c = nameStrips([{ id: 'trans.fill', t0: 6.67, t1: 7.67 }, { id: 'cam.push', t0: 0, t1: 2 }, { id: 'trans.fill', t0: 6.67, t1: 7 }]);
+  assert.deepEqual(c.map(x => x.strip), ['ev_trans-fill_6.67.png', 'ev_cam-push_0.00.png', 'ev_trans-fill_6.67_2.png']);
+  assert.deepEqual(nameStrips([{ id: 'trans.fill', t0: 6.67, t1: 7.67 }])[0].strip, c[0].strip);
+  assert.ok(c.every(x => isAutoStrip(x.strip)) && isAutoStrip('ev_01.png') && !isAutoStrip('ev_m01.png') && !isAutoStrip('evidence.png'));
+  const cell = evidenceCell('b_ref', 6.67, 7.67, c[0].strip);
+  assert.equal(cell, 'b_ref 6.67–7.67s (ev_trans-fill_6.67.png)');
+  assert.deepEqual(parseEffectTable(`효과 표\n| a | b | c | d |\n|---|---|---|---|\n| trans.fill | ② | ${cell} | s1 |`)[0].evidence, { ref: 'b_ref', t0: 6.67, t1: 7.67, img: 'ev_trans-fill_6.67.png' });
 });
