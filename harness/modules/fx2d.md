@@ -1,0 +1,35 @@
+# fx2d — VHS·글리치·시간 재매핑
+
+변수는 항상 `fx`·`time`, 호출은 `fx.vhs(` 처럼 괄호 앞 공백 없이 쓴다.
+소스 점검: `fx.vhs(` → fx.vhs · `fx.glitch(` → fx.glitch · `time.remap(` → time.remap.
+
+## VHS 오버레이 (일시정지·되감기·재생)
+```js
+const fx = MH.fx, time = MH.time;
+const vhs = fx.vhs(box, {                      // box: position 이 있는 상자. 안에 한 번만 만든다
+  labels: [[0, 'II PAUSE'], [2, '<< REWIND'], [4, 'PLAY ▶']],   // [t, 글자]: t 이후 마지막 값
+  timecode: 'FRI 17:59',                       // true = 00:00:00 초시계 · 문자열 = 그대로 · false = 숨김
+  t0: 0, t1: 6, seed: 1,                       // [t0, t1] 밖은 display:none
+});
+MH.drive(tl, DUR, t => vhs.render(t));
+```
+- 주사선(2px 줄무늬) + 트래킹 띠 하나가 1/12초마다 뛰고, 라벨에 빨강/청록 번짐이 붙는다. 고정 글자만 쓰려면 `label: 'PLAY ▶'`.
+- render 는 style·글자만 바꾼다. 요소는 만들 때 한 번뿐이다.
+
+## 글리치
+```js
+MH.drive(tl, DUR, t => fx.glitch(t, inner, { amount: t > 3 && t < 3.4 ? 1 : 0, seed: 2 }));
+```
+1/24초마다 좌우 흔들림(≤ 8·amount px), 색 갈라짐(±2·amount px), 가로 띠 2~4개가 잘려 나간다. amount 0 이면 지운다.
+`inner` 의 transform·filter·clip-path 는 글리치가 쓴다 → 다른 변형은 바깥 요소에, 글리치는 안쪽 요소에 건다.
+
+## 시간 재매핑 (되감기·정지)
+```js
+const remap = time.remap([[0, 0], [2, 2], [3, 2], [4, 0.5]]);   // [장면 t, 재생할 t]
+MH.drive(tl, DUR, t => draw(remap(t)));       // 0~2 재생 · 2~3 정지 · 3~4 되감기 · 이후 0.5 유지
+```
+- 같은 tIn 이 이어지면 정지, 줄어들면 되감기. 키는 유한한 숫자 쌍 2개 이상.
+- 무대(stage)는 `st.remap(fn)` 으로 같은 함수를 건다.
+
+## 게이트
+② 효과라서 효과 표에 레퍼런스 근거(또는 ③ 사용자 지정)가 없으면 make 가 렌더 전에 멈춘다.
