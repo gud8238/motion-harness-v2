@@ -1,6 +1,6 @@
 ---
 name: mv-setup
-description: motion-harness2 설치·업데이트 (Node 패키지, HyperFrames, 레퍼런스 라이브러리, 한글 폰트). 컴퓨터마다 처음 한 번, 또는 도구가 "setup 을 먼저 실행"이라고 할 때.
+description: motion-harness2 설치·업데이트 (Node 패키지, HyperFrames, 모핑용 flubber·opentype.js, 레퍼런스 라이브러리, 한글 폰트). 컴퓨터마다 처음 한 번, 또는 도구가 "setup 을 먼저 실행"이라고 할 때.
 disable-model-invocation: true
 ---
 

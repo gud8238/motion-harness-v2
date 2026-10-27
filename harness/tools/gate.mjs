@@ -61,7 +61,7 @@ export function runGate(projDir) {
   return { ok: violations.length === 0, violations, warnings, count };
 }
 
-const WHY = { 'no-row': '효과 표에 이 효과의 행이 없음', 'bad-evidence': '근거 칸을 읽을 수 없음 (형식: <레퍼런스> 0–4.5s (ev_01.png)) 또는 단계 칸이 ①②③ 이 아님', 'missing-image': '근거 이미지 파일이 없음 (work/ref-<레퍼런스>/<이미지>)', 'user-not-in-brief': 'brief.md "효과 지정"에 이 효과가 없음' };
+const WHY = { 'no-row': '효과 표에 이 효과의 행이 없음', 'bad-evidence': '근거 칸을 읽을 수 없음 (형식: <레퍼런스> 6.67–7.42s (ev_trans-fill_6.67.png)) 또는 단계 칸이 ①②③ 이 아님', 'missing-image': '근거 이미지 파일이 없음 (work/ref-<레퍼런스>/<이미지>)', 'user-not-in-brief': 'brief.md "효과 지정"에 이 효과가 없음' };
 
 // 직접 실행일 때만 CLI 동작. Node 는 import.meta.url 을 realpath 로 주지만 argv[1] 은 심볼릭 링크 그대로라 둘 다 realpath 로 비교한다.
 const isMain = () => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } };
@@ -73,7 +73,8 @@ if (isMain()) {
   if (r.ok) { console.log(`✔ 게이트 통과 (② ${r.count}개)`); process.exit(0); }
   for (const v of r.violations) console.log(`✖ ${v.id} — ${v.file}:${v.line} — ${WHY[v.reason]}`);
   console.log(`\n② 스타일 효과는 레퍼런스 근거가 있어야 합니다. 아래 셋 중 하나로 해결하세요.
-  1) 근거 추가: node harness/tools/analyze-ref.mjs strip 으로 해당 구간 이미지를 만들고, work/PLAN.md 효과 표에 "<레퍼런스> 0–4.5s (ev_01.png)" 를 적기
+  1) 근거 추가: work/ref-<레퍼런스>/analysis.md 후보의 "→ 근거 칸:" 문구(예: "<레퍼런스> 6.67–7.42s (ev_trans-fill_6.67.png)")를 효과 표 근거 칸에 붙여 넣기.
+     후보에 없으면 node harness/tools/analyze-ref.mjs strip <프로젝트> ref/<영상> <시작초> <끝초> 로 ev_mNN.png 를 만들고 출력된 근거 칸을 적기
   2) 사용자 지정: 정말 넣고 싶은 효과면 brief.md 의 "효과 지정"에 효과 이름을 적고, 효과 표에 단계 ③ · 근거 "사용자 지정" 으로 적기
   3) 효과 제거: 장면에서 해당 효과 호출을 지우기`);
   process.exit(1);

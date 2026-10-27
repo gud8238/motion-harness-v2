@@ -1,7 +1,7 @@
 # lens2d — 심도·초점 이동·스미어·모션 블러
 
 렌즈 변수는 항상 `lens`, 호출은 `lens.dof(` 처럼 괄호 앞 공백 없이 쓴다.
-소스 점검: `lens.dof(` → lens.dof · `lens.rack(` → lens.rack · `lens.smear(` → lens.smear. 모션 블러는 API 가 없다.
+소스 점검: `lens.dof(` → lens.dof · `lens.rack(`·`.rack(` → lens.rack · `lens.smear(` → lens.smear. 모션 블러는 API 가 없다.
 
 ## 심도와 초점 이동
 ```js

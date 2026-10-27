@@ -1,37 +1,37 @@
 # motion-harness2 가이드 (이 한 파일이 기준)
 
-레퍼런스 영상의 스타일을 **빠짐없이, 가볍게** 옮겨 사용자 이미지·주제로 짧은 모션그래픽(15~40초)을 만든다.
-렌더 엔진은 HyperFrames(HTML→MP4), 장면은 DOM/GSAP · 캔버스(MH) · three.js(MH3) 중에서 고른다.
-도구는 `node "<플러그인>/harness/tools/<도구>.mjs" …` (스킬에 적힌 전체 경로를 쓴다. 아래에서 `$T` 로 줄여 씀). 프로젝트 `P` 는 기본 `.`(Claude Code 로 연 폴더 자체 — `ref/`·`source/` 가 그 바로 아래), 하위 폴더 방식이면 그 이름. 결과 영상은 `out/<폴더이름>.mp4`.
+레퍼런스 스타일을 **빠짐없이, 가볍게** 옮겨 사용자 이미지·주제로 15~40초 모션그래픽을 만든다(HyperFrames). 도구 `node "<플러그인>/harness/tools/<도구>.mjs"`(스킬의 전체 경로). `P` = `.`(연 폴더, 바로 아래 `ref/`·`source/`) 또는 하위 폴더 이름.
+**3단계**: ① 기본기 항상(강도만 레퍼런스) · ② 스타일 효과는 **레퍼런스 근거 이미지가 있을 때만** · ③ brief "효과 지정"에 적힌 것.
 
-## 1. 가볍게 — 지킬 것
-- **읽는 것**: brief.md, 레퍼런스마다 `analysis.md` + `card.png` **한 장**, 소스는 `sources.png` **한 장**(개별 이미지는 세부가 필요할 때만). 라이브러리 스타일이면 그 STYLE.md 의 1~6절만. 다른 문서는 막혔을 때만.
-- **쓰는 것**: `work/PLAN.md` **하나** (DNA 표 + 시그니처 + 장면 표). 설명 문장은 최소.
-- **보는 것**: 스토리보드 1장, 검수 시트 1장. 움직임이 의심될 때만 strip.
-- **하지 않는 것**: 구조안 여러 개 비교, 별도 모델시트, 2회 이상의 수정 라운드, 대조표(compare)는 요청·의심 시만, HyperFrames 스킬의 자체 절차(스토리라인 3개·SPEC.md·REVIEW.md).
-- 질문은 처음 **한 번**(AskUserQuestion, 추천안 먼저). 브리프로 답이 되면 묻지 않는다.
+## 1. 가볍게
+- **상시 비용은 스킬 소개문뿐**(약 700토큰).
+- **작업 중 문서는 필요한 것만**: 레퍼런스마다 `analysis.md`·`card.png`·`evidence.png`, 소스 `sources.png`(개별 이미지는 세부가 필요할 때만), 켜진 모듈·고른 장면 종류의 문서, 라이브러리 스타일은 STYLE.md 1~6절. 나머지는 막혔을 때만. 쓰는 것 `work/PLAN.md` **하나**(설명 최소), 보는 것 스토리보드 1장·qc.jpg·qc-motion.png.
+- **품질에 필요한 코드는 런타임에 아낌없이**(`MH.*` 는 토큰 비용 없음).
+- 안 함: 구조안 여러 개, 모델시트, 수정 2회 이상, 저해상도 미리보기, compare·strip(요청·의심 시만), HyperFrames 스킬 자체 절차(스토리라인 3개·SPEC·REVIEW). 질문은 처음 **한 번**(AskUserQuestion, 추천안 먼저), 브리프로 답이 되면 생략.
 
 ## 2. 순서
-1. **입력**: `brief.md`, `ref/`, 소스는 `assets.mjs sheet P` → `work/sources.png` 한 장으로 파악(크기·배경 상태 포함). 링크·ID는 `refs.mjs fetch P <ID|링크>`. 레퍼런스가 없거나 "추천" → `/mv-refs`.
-2. **측정**: `analyze-ref.mjs P ref/<파일>` → `work/ref-*/analysis.md` + `card.png` 보기.
-2.5 **소스 점검** (아래 '소스 점검' 절): 레퍼런스를 재현하는 데 필요한 이미지와 받은 소스를 맞춰 보고, 부족한 것이 있으면 `work/assets.json` → `assets.mjs request P` → `work/ASSETS.md`(용도·규격·생성 프롬프트). **⏸** AskUserQuestion: `이미지 추가 완료` / `일부만 넣고 진행` / `이미지 없이 진행(코드로 대체)`. 답이 오면 `assets.mjs check P` + `new.mjs P`(동기화) 후 새로 들어온 이미지만 확인. 부족한 것이 없으면 "추가 이미지 불필요" 한 줄로 넘어간다. "바로 만들어"면 목록만 보여주고 기다리지 않는다.
-3. **계획** `work/PLAN.md` (아래 틀). 내레이션이 있으면 먼저 `work/narration.json` → `tts.mjs P` (시각이 장면 길이를 정함).
-4. **장면**: `scene.mjs add P <id> <dom|canvas|three> --dur 초 --title … --note …` 로 만들고 `scene/compositions/<id>.html` 을 채운다. DNA 값은 `scene/index.html` 의 `window.DNA` 와 CSS 변수에 한 번만 쓴다.
-5. **스토리보드**: `board.mjs P` → `work/storyboard.png` 를 레퍼런스 `card.png` 와 나란히 보고 **품질 기준**(7절) 미달이면 보강, 한 번 고침.
-6. **⏸ 검토 요청** (사용자가 "바로 만들어"라고 했으면 생략): DNA 표 요약(반영률) · 시그니처→장면 · 장면 표 · storyboard.png 경로 · 자신 없는 점 1개 → 승인/장면 수정/스타일 조정.
-7. **제작**: `work/sound.json` 작성 → `make.mjs P` (오디오→검사→렌더→검수). `work/qc.jpg` 보고 문제가 있으면 한 번 고쳐 재실행.
-8. **납품**: `out/<폴더이름>.mp4` 경로, 길이·해상도, 반영한 DNA 한 줄, 검수 수치(LUFS·문제 구간), 들어봐야 할 것, 약점 1개.
-수정 요청은 해당 장면만 고치고 `make.mjs` 재실행.
+1. **입력**: `brief.md`, `ref/`, 소스는 `assets.mjs sheet P` → `work/sources.png`(크기·배경). 링크·ID 는 `refs.mjs fetch P <ID|링크>`. 레퍼런스가 없거나 "추천" → `/mv-refs`.
+2. **측정**: `analyze-ref.mjs P ref/<파일>` → `work/ref-<이름>/` 의 `analysis.md`·`card.png`(DNA 근거), `evidence.json`·`evidence.png`(효과 후보 8개씩, 넘으면 `evidence_2.png`…).
+2.2 **근거표 확정**: evidence.png(쪽마다) 후보를 확정·기각(신호가 보이고 쓸 것인가). 확정분은 analysis.md `→ 근거 칸:` 문구(`<이름> <t0>–<t1>s (ev_<id>_<t0>.png)`, 이름 고정)를 효과 표에. 놓친 효과는 `analyze-ref.mjs strip P ref/<파일> <t0> <t1>` → `ev_mNN.png`·근거 칸. **근거 이미지 없는 ② 금지**(이미지 레퍼런스는 lens.dof 만).
+2.5 **소스 점검**(2.5절) — 부족하면 ASSETS.md → **⏸** AskUserQuestion `이미지 추가 완료` / `일부만 넣고 진행` / `이미지 없이 진행(코드로 대체)` → `assets.mjs check P` + `new.mjs P`, 새 이미지만 확인. 부족한 게 없으면 "추가 이미지 불필요" 한 줄. "바로 만들어"면 목록만 보이고 계속.
+3. **계획** `work/PLAN.md`(3절). 내레이션은 먼저 `work/narration.json` → `tts.mjs P`(시각이 장면 길이).
+4. **장면**: 켜진 모듈 문서만 읽고(4절) `scene.mjs add P <id> <dom|canvas|three|stage> --dur 초 --title … --note …` → `scene/compositions/<id>.html`. DNA 는 `scene/index.html` 의 `window.DNA`·CSS 변수에만.
+5. **스토리보드** `board.mjs P` → `work/storyboard.png`(무대는 비트마다 한 칸)를 card.png 와 나란히, 6절 기준 미달이면 한 번 보강.
+6. **⏸ 검토 요청**("바로 만들어"면 생략): DNA 반영률 · 효과 표 · 시그니처→장면 · 장면 표 · storyboard.png 경로 · 자신 없는 점 1개 → 승인/장면 수정/스타일 조정.
+7. **제작**: `work/sound.json` → `make.mjs P`(오디오→검사→게이트→렌더→검수→모션 검수). qc.jpg·qc-motion.png 에 문제가 있으면 한 번 고쳐 재실행(남은 큰 문제는 납품 메시지에).
+8. **납품**: `out/<폴더이름>.mp4`, 길이·해상도, 반영 DNA 한 줄, LUFS·문제 구간, 모션 검수 ✔/✗ 한 줄, 들어볼 것, 약점 1개. 수정 요청은 그 장면만 고쳐 make 재실행.
 
-## 2.5 소스 점검 — 무엇이 비었는지
-- **레퍼런스 요소 목록**: card.png(필요하면 shots.png)에서 구간별로 화면을 이루는 요소를 뽑는다 — 배경·환경, 캐릭터와 그 포즈·표정, 소품·오브젝트, 그래픽(일러스트·아이콘·UI), 질감 그림. 요소마다 레퍼런스 느낌에 얼마나 중요한지(핵심/보조).
-- **판정** (요소마다 하나): ① 받은 소스로 충족 ② 코드로 충분 — 평면 도형·그리드·그라데이션·파티클·타이포·단순 아이콘·UI 테두리·3D 기본 형태 ③ **이미지 필요** — 코드로 그리면 레퍼런스 느낌이 크게 떨어지는 것(회화·사진·일러스트 질감의 배경, 다른 포즈·표정의 캐릭터, 복잡한 오브젝트, 손그림·재질 그림).
-- **요청 기준**: ③ 중 핵심만 필수(최대 5), 나머지 선택(최대 3). 코드가 잘하는 것은 요청하지 않는다. 사용자 소스와 겹치거나 충돌하는 것도 요청하지 않는다.
-- **assets.json** (형식은 `assets.mjs` 맨 위 주석): 파일 이름은 영문 소문자_밑줄로 정해 준다(`bg_scene2_street.png`). `why` 에 레퍼런스 구간·시각, `ref` 에 그 구간 프레임(`work/ref-*/shot_NN.jpg`), 캐릭터·제품이면 `attach` 에 사용자 소스(일관성용), `size` 는 쓰일 크기(패럴랙스 배경은 가로로 넓게), 오려 쓸 것은 `transparent: true`.
-- **프롬프트** (`prompt_en` 주, `prompt_ko` 설명): 무엇이 + 어떤 동작/상태 / 구도와 카메라 각도(레퍼런스 프레임과 같게) / DNA 색 HEX / 매체·질감·조명 / 비율 / `no text, no watermark, no logo`. 모든 프롬프트 끝에 **같은 스타일 문구**를 붙여 화풍을 통일. 캐릭터는 "same character as the attached image". 레퍼런스의 캐릭터·로고를 베끼지 않고 "in the style of the attached frame, original design".
-- 이미지가 오면 그 이미지에 맞춰 계획한다. 오지 않은 것은 코드로 대체하고 PLAN 11번에 적는다.
+## 2.5 소스 점검
+- **요소**: card.png(필요하면 shots.png)에서 구간별 화면 요소 — 배경·환경, 캐릭터 포즈·표정, 소품, 그래픽(일러스트·아이콘·UI), 질감 그림. 각각 핵심/보조.
+- **판정**: ① 받은 소스로 충족 ② 코드로 충분(평면 도형·그리드·그라데이션·파티클·타이포·단순 아이콘·UI 테두리·3D 기본형) ③ **이미지 필요**(코드로는 느낌이 크게 떨어짐: 회화·사진·일러스트 질감 배경, 다른 포즈·표정의 캐릭터, 복잡한 오브젝트, 손그림·재질).
+- **캐릭터**(점검 표에 판정 한 줄): 몸통 1개+단순 눈·입 → **코드 캐릭터** · 윤곽선·명암·질감의 그림체 → **파츠 시트** 요청(프롬프트 `modules/rig2d.md`). 파츠가 어긋나면 rig.json 회전 중심 수정, 안 되면 코드 캐릭터로 바꾸고 알린다.
+- **요청**: ③ 중 핵심만 필수(최대 5), 나머지 선택(최대 3). 코드가 잘하는 것, 사용자 소스와 겹치거나 충돌하는 것은 뺀다.
+- `work/assets.json` → `assets.mjs request P` → `work/ASSETS.md`(형식 `assets.mjs` 맨 위): 파일 이름 영문 소문자_밑줄 · `why` 레퍼런스 구간 · `ref` 그 구간 프레임(`work/ref-*/shot_NN.jpg`) · 캐릭터·제품은 `attach` 에 사용자 소스 · `size` 쓰일 크기(패럴랙스 배경은 넓게) · 오려 쓸 것 `transparent: true`.
+- **프롬프트**(`prompt_en` 주, `prompt_ko` 설명): 대상+동작 / 구도·카메라 각도(레퍼런스 프레임과 같게) / DNA HEX / 매체·질감·조명 / 비율 / `no text, no watermark, no logo` + 끝에 **같은 스타일 문구**. 캐릭터는 "same character as the attached image", 레퍼런스 캐릭터·로고는 베끼지 않고 "in the style of the attached frame, original design".
+- 온 이미지에 맞춰 계획, 안 온 것은 코드로 대체해 PLAN 11번에.
+- **사진**: 여러 각도 = 같은 대상(턴테이블·장면마다 각도·나란히). 단색 배경 사물 `cutout:true`(tol), 사람 `npx hyperframes remove-background source/x.jpg -o scene/assets/source/x.png`(인물 전용). 스타일 안의 프레임(종이 카드·그리드 칸·인쇄판·3D 공간)에 넣고 "다시 그리기"는 특징 3개 이상(색 배치·실루엣·부품) 유지. 권리가 없으면 가상 대체물, 학생 얼굴은 브리프대로.
 
-## 3. PLAN.md 틀 (DNA + 장면) — 채운 모습: `<플러그인>/harness/PLAN-example.md` (형식만 참고, 색·스타일은 따라 하지 않는다)
+## 3. PLAN.md 틀 (채운 모습 `<플러그인>/harness/PLAN-example.md` — 형식만, 색·스타일은 따르지 않음)
 ```markdown
 # P 계획
 주 레퍼런스: <파일/ID> · 보조: <파일 — 항목 번호만> 또는 없음
@@ -40,69 +40,75 @@
 | 1 | 구도·레이아웃 | 그리드/여백/피사체 크기%/글자 위치 | | 채택·변형·제외 |
 | 2 | 색 | 바탕·잉크·강조 HEX+비중, 강조색의 의미 | | |
 | 3 | 질감·재질 | 노이즈 σ, 그레인 움직임/고정, 그라데이션·비네트, 평면/2.5D/3D, 선·그림자 | | |
-| 4 | 타이포 | 서체 계열·굵기·크기(화면높이%)·자간·등장 방식 | | |
-| 5 | 모션 | 주 이징(스냅/스프링/선형, 오버슈트), 1s/2s, 등장·퇴장 | | |
+| 4 | 타이포 | 서체·굵기·크기(화면높이%)·자간·등장 | | |
+| 5 | 모션 | 주 이징(스냅/스프링/선형), 1s/2s, 등장·퇴장 | + ant·over·settle·hold·squash | |
 | 6 | 리듬 | BPM, 평균 샷, 홀드 비율, 가속·감속 | | |
 | 7 | 전환 | 컷/와이프/푸시/모핑/원테이크 | | |
 | 8 | 카메라 | 고정/푸시/팬/회전/패럴랙스/3D 궤도 | | |
-| 9 | 정보 장치 | 캡션 줄·숫자·라벨·자막 형태 | | |
+| 9 | 정보 장치 | 캡션 줄·숫자·라벨·자막 | | |
 | 10 | 사운드 | 음악 성격·BPM, 효과음, 무음 | | |
-| 11 | 소스 처리 | — | 소스별 쓰임(다시 그리기/배경제거 합성/3D 턴테이블/화면 속 화면) + 요청 이미지 받음·대체 | — |
+| 11 | 소스 처리 | — | 소스별 쓰임(다시 그리기/배경제거 합성/턴테이블/화면 속 화면/캐릭터) + 요청 이미지 받음·대체 | — |
 반영률 (채택+변형)/10 = _
 시그니처: S1 <동작> → #장면 · S2 … (2~5개, 전부 배정, 가장 강한 것은 정점)
+효과 표 (② 는 근거 필수, ③ 은 brief "효과 지정")
+| 효과 id | 단계 | 근거 | 사용 위치 |
+| <id> | ② | <이름> <t0>–<t1>s (ev_….png) | st1 b1–b3 |
+| <id> | ③ | 사용자 지정 | s4 |
+장면 표
 | # | 시간 | 종류 | 화면(구도·동작) | 소스 | DNA·시그니처 | 전환 | 효과음 | 문구 |
 ```
-규칙: **주 레퍼런스 1개**(보조는 지정 항목만) · 근거는 측정값(추정은 "(추정)") · 이유 없는 제외 금지 · **반영률 ≥ 8/10** · 시그니처 전부 사용 · 이야기·장면 구성·캐릭터·음악은 레퍼런스에서 가져오지 않는다(문법만).
-**사용자가 색·배경을 지정하면 그것이 우선** (2·3번을 '변형 — 사용자 지정'으로).
-질감은 측정값을 그대로: 노이즈 σ≥1 이면 `MH.grain`(움직이면 rate 12~24, 고정이면 rate 0) 또는 `MH.paper`, 그라데이션은 `MH.gradient`(방향·밝기차), 비네트는 `MH.vignette`.
+규칙: **주 레퍼런스 1개**(보조는 지정 항목만) · 근거는 측정값(추정은 "(추정)") · 이유 없는 제외 금지 · **반영률 ≥ 8/10** · 시그니처 전부 사용 · 이야기·구성·캐릭터·음악은 가져오지 않는다(문법만) · **사용자가 지정한 색·배경이 우선**(2·3번 '변형 — 사용자 지정').
+- 5번 ① 강도(analysis.md "① 기본기 강도"): `ant` 예비동작 비율·`over` 오버슈트 비율·`settle` 안착 초·`hold` 정지 초·`squash` 최대 늘어남 → `window.DNA.motion`.
+- 효과 표: id 는 `catalog.json` 것. ② 근거 = 2.2 문구, ③ = `사용자 지정` + brief "## 효과 지정"에 그 id 나 `ko` 표현, ① 은 생략 가능. `lens.mblur` 행 = 렌더 약 4배(미리 알림).
+- 질감 측정값 그대로: 노이즈 σ≥1 → `MH.grain`(움직이면 rate 12~24, 고정 0)·`MH.paper`, `MH.gradient`, `MH.vignette`.
 
 ## 4. 장면 엔진
-**종류 고르기** — DNA를 가장 적은 코드로 재현하는 쪽:
-- `dom` : 타이포·레이아웃·카드·UI 모션, 키네틱 타이포. GSAP `fromTo` + `ease: "dna"`.
-- `canvas` : 그리드·선 드로잉·하프톤·픽셀·종이/그레인 질감·데이터, 사진 배경제거 합성. `MH.drive(tl, DUR, draw)`.
-- `three` : 여러 각도 사진 턴테이블, 공간 속 사진 카드, 깊이 있는 카메라 이동, 파티클. `MH3`.
-- 이름 붙은 효과(전환·타이틀·자막 스타일·차트·3D 배경)는 먼저 레지스트리: `npx hyperframes catalog --query "<영어>" --json` → `npx hyperframes add <이름> --json` (scene 폴더에서). 가져온 블록의 색·폰트는 DNA로 바꾼다.
+**종류** — DNA를 가장 적은 코드로 재현하는 쪽:
+- `dom` 타이포·레이아웃·카드·UI, 키네틱 타이포. GSAP `fromTo` + `ease: "dna"`.
+- `canvas` 그리드·선 드로잉·하프톤·픽셀·종이/그레인·데이터, 사진 합성 → `modules/canvas.md`.
+- `three` 여러 각도 사진 턴테이블, 공간 속 카드, 깊이 카메라, 파티클 → `modules/three.md`(MH3).
+- `stage` 원테이크: 큰 월드·카메라·세트·배우를 큐시트 하나로(`MH.stage2d`), **`cam.onetake`·`trans.shared` 근거가 있을 때만**. 비트(`<id>-beats`) = 장면 표 한 행 = 스토리보드 한 칸. 25초 이하, 다른 종류와 혼용.
+- 이름 붙은 효과(전환·타이틀·자막·차트·3D 배경)는 먼저 레지스트리: `npx hyperframes catalog --query "<영어>" --json` → `npx hyperframes add <이름> --json`(scene 폴더). 색·폰트는 DNA로.
 
-**HyperFrames 필수 규칙**: 장면 파일은 `<template>` 안에 style·markup·script / 루트 id = 호스트 id = 타임라인 키 / 타임라인 `gsap.timeline({paused:true})` 를 만들고 마지막에 `window.__timelines["id"]=tl` / `from` 대신 `fromTo`, 시간은 절대 초 / `Date.now`·`Math.random`·타이머·`repeat:-1`·네트워크 금지 / 같은 요소를 GSAP과 CSS transform 으로 동시에 움직이지 않음 / 경로는 `assets/…` / 한글 글자를 쓰는 장면은 Pretendard `@font-face` 포함(템플릿에 있음) / 비동기 로드는 `window.__hf.buildReady[key]=promise`.
-**장면 전환**: 다음 장면 `--start` 를 앞당겨 겹치고(z-index 위) 들어오는 장면에서 와이프·푸시를 GSAP/캔버스로, 또는 레지스트리 전환 블록. 전환 중 빈 화면 금지.
+**① 기본기**(게이트 없음, 손 키프레임 대신) — t 의 순수 함수, 생략한 강도는 `DNA.motion`(`MH.motion()`)
+- `MH.move(t,t0,a,b,{dur,ant,over,settle})` 예비동작→이동→오버슈트→안착(숫자/배열)
+- `MH.follow(t,fn,{lag,damp})` 늦게 따라감(fn 은 draw 밖에서 한 번 만듦)
+- `MH.sim(t,step,init,update)` 결정적 시뮬(update 는 새 상태 반환) · `MH.phys.body({pos,vel,spin,g,bounce,floor}).at(t)` → {x,y,rot}
+- `MH.gsapSpring(name,'snappy'|'smooth'|'heavy'|'playful'|{f,z})` → DOM 용 GSAP 이징 이름
+- `MH.screenSize()` → [W,H](9:16, 1920×1080 가정 금지) · `MH.easeOf('dna'|E 이름|함수)`
 
-**MH (캔버스, window.MH)** — `t` 는 장면 로컬 초, draw(t) 는 순수 함수
-- 시간: `tween(t,t0,d,ease)` 0→1 · `kf(t,[[t,v,ease],…])` 키프레임(숫자/배열) · `springAt(t,t0,a,b,SPRING.snappy|smooth|heavy|playful)` · `seg(t,a,b)` · `quant(t,12)` 2s 느낌 · `breathe(t,amp,hz)` · `DNA.B(n)` n박→초
-- 이징: `E.out/in/inOut/expoOut/back/smooth/snap` · `E.bez(x1,y1,x2,y2)` · `DNA.easeFn`
-- 그리기: `MH.clear(ctx,색)` · `rr/circle/line(ctx,pts,{w,color,p})`(p=그려진 비율) · `txt(ctx,글,x,y,{size,weight,color,align,tracking,maxW})` · `txtIn(ctx,글,x,y,p,{mode:'rise'|'chars'|'words'|'type'|'clip'})` · `img(ctx,이름,cx,cy,w,h,{fit,r,rot,alpha})`(중심 기준) · `withCam(ctx,{x,y,z,r},fn)`
-- 질감: `gradient(ctx,{stops,angle|type:'radial'})` · `paper(ctx,{amount,fiber,scale})` · `grain(ctx,t,{amount,rate})` · `vignette(ctx,W,H,a)`
-- 사진: `MH.load({이름:{src:'assets/source/x.jpg',cutout:true,tol:20}})`(단색 배경 플러드필 제거) · 전환 `MH.trans(ctx,'wipe'|'push'|'iris'|'zoom'|'blinds'|'flash',A,B,p,{dir,bar})` + `MH.layer(W,H)`
-- 결정적 난수: `rng(seed)` `hash(n,m)` `noise(x)` `noise2(x,y)` `boil(t,key,amp)`
+**② 모듈은 효과 표에 켜진 것만 `modules/<이름>.md` 를 읽는다**(캐릭터가 있으면 rig2d 도). 게이트가 찾는 변수 이름(`cam`·`trans`·`lens`·`fx`·`time`·`morph`)은 문서의 선언 그대로, 괄호 앞 공백 없이.
+| 효과 id | 문서 |
+|---|---|
+| rig.actor ①(캐릭터 · 배우 파일 `scene/assets/actors/<이름>.json`) | `modules/rig2d.md` |
+| cam.pan·push·rotate·shake·parallax | `modules/camera2d.md` |
+| trans.fill·zoomThrough·whip·match | `modules/transitions.md` |
+| lens.dof·rack·smear·mblur | `modules/lens2d.md` |
+| fx.vhs·glitch, time.remap | `modules/fx2d.md` |
+| morph.shape·text | `modules/morph.md` |
+| cam.onetake·trans.shared (stage 종류) | `modules/stage.md` |
 
-**MH3 (three.js r159, window.MH3)** — draw(t)마다 오브젝트·카메라를 t로 정하고 `s.render()`
-- `s=MH3.stage(canvasId,{bg,fov,exposure,fog,shadows})` · `MH3.lights(scene,{key,rim,keyI,rimI})` · `MH3.contactShadow(scene,{r,opacity})` · `MH3.floor(scene,{color})`
-- `MH3.turntable([{img,angle},…],{h})` → `.set(각도)` : 여러 각도 사진을 교차시켜 도는 것처럼(±90° 범위, 배경 제거 이미지)
-- `MH3.photoCard(img,{h,margin,color})` · `MH3.textPlane(글,{size,weight,color,height})` · `MH3.orbit(camera,{target,radius,height,angle,fov})` · `MH3.points(n,seed,{spread,size,color,opacity,add})`(둥근 점, add=가산 혼합) · `MH3.glow({color,size,opacity})` 후광 · `MH3.bgRadial(안,밖)` 방사형 배경 · `MH3.tex(이미지)`
+**HyperFrames 규칙**: `<template>` 안에 style·markup·script / 루트 id = 호스트 id = 타임라인 키 / `gsap.timeline({paused:true})`, 끝에 `window.__timelines["id"]=tl` / `from` 대신 `fromTo`, 절대 초 / `Date.now`·`Math.random`·타이머·`repeat:-1`·네트워크 금지(`MH.hash`·`MH.rng`) / 한 요소를 GSAP·CSS transform 으로 동시에 움직이지 않음 / 경로 `assets/…` / 한글은 Pretendard `@font-face`(템플릿) / 비동기 로드 `window.__hf.buildReady[key]=promise`.
+**장면 전환**: 다음 장면 `--start` 를 앞당겨 겹치고(z-index 위) 들어오는 장면에서 와이프·푸시, 또는 레지스트리 전환 블록. 전환 중 빈 화면 금지.
 
-## 5. 소스 이미지
-- 여러 각도 사진 = 같은 대상의 일관성. 3D 턴테이블, 장면마다 각도 바꾸기, 나란히 소개.
-- 배경 제거: 단색 배경 제품·사물 → `cutout:true` (tol 조절). 사람 사진 → `npx hyperframes remove-background source/x.jpg -o scene/assets/source/x.png` (인물 전용 모델 — 사물에는 쓰지 않는다).
-- 사진은 스타일 안의 프레임(종이 카드·그리드 칸·인쇄판·3D 공간)에 넣는다. "다시 그리기"는 특징 3개 이상(색 배치·실루엣·부품)을 유지.
-- 사용 권리가 없으면 가상 대체물. 학생 얼굴 등은 브리프 지시를 따른다.
+**MH 시간·이징** (모든 종류) — `t` 는 장면 로컬 초, `MH.drive(tl, DUR, draw)` 의 draw(t) 는 순수 함수
+- `tween(t,t0,d,ease)` 0→1 · `kf(t,[[t,v,ease],…])` · `springAt(t,t0,a,b,SPRING.snappy|smooth|heavy|playful)` · `seg(t,a,b)` · `quant(t,12)` 2s 느낌 · `breathe(t,amp,hz)` · `DNA.B(n)` n박→초
+- `E.out/in/inOut/expoOut/back/smooth/snap` · `E.bez(x1,y1,x2,y2)` · `DNA.easeFn`
 
-## 6. 사운드
+## 5. 사운드
 `work/sound.json`: `{"bed":"pulse|ambient|none","bpm":120,"key":"A","minor":true,"gain":-6,"music":"source/곡.mp3","events":[[전역초,"종류",dB]]}`
 효과음: whoosh swoosh pop click tick snap thump impact riser chime ding type glitch sparkle paper. 보이는 동작마다 하나, 정점 직전 0.5~2초 정적 → 정점에 가장 큰 소리.
-내레이션(한국어 edge-tts: ko-KR-SunHiNeural 여 / ko-KR-InJoonNeural 남, 또는 녹음 파일) → `tts.mjs P` → `scene.mjs captions P` (자막 장면 자동) → 음악 자동 덕킹. 직접 녹음의 대본이 없으면 `npx hyperframes transcribe`.
-Claude 는 소리를 들을 수 없다 → LUFS·이벤트 수만 보고하고 들어보라고 한다.
+내레이션(edge-tts ko-KR-SunHiNeural 여 / ko-KR-InJoonNeural 남, 또는 녹음) → `tts.mjs P` → `scene.mjs captions P`(자막 장면) → 음악 자동 덕킹. 대본 없는 녹음은 `npx hyperframes transcribe`.
+소리는 못 들으니 LUFS·이벤트 수만 보고하고 들어보라고 한다.
 
-## 7. 연출 최소 기준
-처음 3초 안에 훅 · 2~4초마다 새로운 것 + 한 번의 홀드 · 끝은 처음의 변형 · 강조색은 한 가지 의미 · 중요한 것 ≥100px, 글자 ≥28px(1080 기준, DNA가 더 작으면 장식용만) · 글자 유지 시간 ≥ (글자수÷7+1.2)초 · 금지 기본값: 그라데이션 위 가운데 제목, 전부 페이드인, 의미 없는 파티클, 로고만 나오는 엔딩.
+## 6. 연출 최소 기준
+3초 안에 훅 · 2~4초마다 새로운 것 + 홀드 한 번 · 끝은 처음의 변형 · 강조색은 한 의미 · 중요한 것 ≥100px, 글자 ≥28px(1080 기준, 더 작으면 장식용만) · 글자 유지 ≥ (글자수÷7+1.2)초 · 금지: 그라데이션 위 가운데 제목, 전부 페이드인, 의미 없는 파티클, 로고만 나오는 엔딩.
+**품질 기준**(스토리보드 vs card.png, 레퍼런스와 같은 밀도인가): 요소·레이어 수 · 동시 움직임(배경 흐름·입자·UI·미세 흔들림·캐릭터 생명감) · 깊이(전경·중경·배경, 패럴랙스) · 전환 방식(하드컷·페이드는 레퍼런스가 그럴 때만). 미달이면 검토 전 보강, 못 한 것은 '자신 없는 점'에.
 
-**품질 기준 — 레퍼런스와 같은 밀도인가** (스토리보드 단계에서 card.png 와 나란히)
-- 화면 밀도: 한 화면의 요소·레이어 수가 레퍼런스 대표 프레임과 비슷한가 (레퍼런스가 꽉 차 있으면 우리도)
-- 동시 움직임: 주인공 외에 같이 움직이는 것(배경 흐름·입자·UI·미세 흔들림)이 레퍼런스만큼 있는가
-- 깊이: 레퍼런스에 전경·중경·배경 레이어나 패럴랙스가 있으면 우리도 레이어로 나눈다
-- 전환: 장면 사이를 레퍼런스 방식으로 잇는다 (하드컷·페이드는 레퍼런스가 그럴 때만)
-- 미달이면 검토 요청 전에 보강한다. 보강하지 못한 부분은 '자신 없는 점'에 적는다
+## 7. 검수 (make.mjs)
+- 검사 오류 0 · 검은/빈 구간이 의도인지 · LUFS −14±2 · qc.jpg: 피사체가 작거나 잘림, 글자가 피사체를 가림, 같은 색 위 같은 색 · 시그니처가 보이는가.
+- **게이트**(`gate.mjs`, HyperFrames 검사 다음, `--check` 도): 위반 = 효과 id·파일·줄 + 해결 3가지(근거 추가 2.2 / brief "효과 지정"+③ 행 / 호출 제거). 근거가 없으면 제거가 기본, ③ 은 사용자가 원할 때만.
+- **모션 검수**(`motion-qc.mjs`, 렌더 뒤, 초안 제외): `work/motion-qc.json` + `work/qc-motion.png`(효과 행마다 위 레퍼런스·아래 우리 영상). ✔ 계획한 자리 · ✗ 없음 · ? 눈 확인 · ⚠ 계획에 없는 ② 신호, 딱딱한 움직임(등속·급정지 → `MH.move`·스프링).
 
-## 8. 검수 (make.mjs 결과)
-검사 오류 0 · 검은 화면/내용 없는 구간이 의도된 것인지 · LUFS −14±2 · qc.jpg: 피사체가 작거나 잘림, 글자가 피사체를 가림, 같은 색 위 같은 색 · 시그니처 무브가 실제로 보이는가. 한 번 고치고, 남은 큰 문제는 납품 메시지에 적는다.
-
-## 9. 저작권
-레퍼런스는 문법만. jasonzhu.ai/X 작품은 제작자 소유(허락 없음). lemo 데모 CC BY 4.0, animate MIT, Pretendard OFL. 사용자 사진·음악은 권리가 있을 때만 그대로 쓴다.
+## 8. 저작권
+레퍼런스는 문법만. jasonzhu.ai/X 작품은 제작자 소유(허락 없음). lemo 데모 CC BY 4.0, animate MIT, Pretendard OFL, flubber MIT, opentype.js MIT. 사용자 사진·음악은 권리가 있을 때만.

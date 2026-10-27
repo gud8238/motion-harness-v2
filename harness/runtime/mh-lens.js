@@ -1,5 +1,5 @@
 /* MH.lens — 렌즈: 심도(dof)·래크 포커스(rack)·단일 요소 스미어(smear) (클래식 스크립트, mh.js·mh-cam.js 다음에 불러온다 → window.MH.lens)
- * 변수 이름은 항상 `lens` (const lens = MH.lens;) — 게이트가 `lens.dof(`·`lens.rack(`·`lens.smear(` 호출을 찾는다.
+ * 변수 이름은 항상 `lens` (const lens = MH.lens;) — 게이트가 `lens.dof(`·`lens.rack(`·`.rack(`(dof.rack 도)·`lens.smear(` 호출을 찾는다.
  * dof(cam, {focus, aperture}) → Lens.  레이어 깊이 d 의 흐림 = min(24, |d − focus|·aperture) px.
  *   Lens.rack(keys) · lens.rack(Lens, keys)  [[t, focus], …] 키 사이는 선형, 첫 키 앞·마지막 키 뒤는 그 값 유지. 체인 가능.
  *   Lens.render(t)   cam.layers 마다 style.filter = 'blur(Npx)' (0.05px 미만은 ''). 반드시 cam.render(t) 다음에 부른다 — filter 와 transform 은 서로 다른 속성이라 겹치지 않는다.
@@ -74,7 +74,7 @@ function smear(el, vx, vy, { k = 0.02, max = 40 } = {}) {
   el.style.filter = s.url;
 }
 
-// rack(dof, keys) — dof.rack(keys) 와 같다. 게이트가 `lens.rack(` 표기를 찾으므로 문서·장면은 이 형태를 쓴다
+// rack(dof, keys) — dof.rack(keys) 와 같다. 게이트는 `lens.rack(`·`.rack(` 둘 다 찾는다 (문서·장면은 lens.rack 형태를 권장)
 const rack = (l, keys) => l.rack(keys);
 
 MH.lens = { blurFor, dof, rack, smear };

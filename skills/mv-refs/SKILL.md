@@ -1,6 +1,6 @@
 ---
 name: mv-refs
-description: 프로젝트 주제와 소스 이미지에 맞는 레퍼런스를 lemo-opuscar·animate·awesome-opus-5.5-video(jasonzhu.ai)에서 4~6개 추천하고, 영상을 재생해 볼 수 있는 페이지를 만든다.
+description: 'motion-harness2(v2) — 프로젝트 주제와 소스 이미지에 맞는 레퍼런스를 lemo-opuscar·animate·awesome-opus-5.5-video(jasonzhu.ai)에서 4~6개 추천하고, 영상을 재생해 볼 수 있는 페이지를 만든다. v2 프로젝트(brief.md 맨 위 harness: v2)이거나 v2 를 언급할 때 사용.'
 argument-hint: "[하위폴더이름]"
 ---
 

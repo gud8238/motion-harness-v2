@@ -1,6 +1,6 @@
 ---
 name: mv-new
-description: 지금 연 폴더(또는 그 아래 폴더)를 모션그래픽 영상 프로젝트로 준비한다 — 미리 넣어 둔 ref/(레퍼런스 mp4)·source/(이미지) 를 확인하고, 빠진 폴더·brief.md·scene(HyperFrames)을 만들고, 화면 비율을 정하고, source/ 를 동기화한다. 이미지를 추가·교체한 뒤 다시 실행하면 동기화만 한다.
+description: 'motion-harness2(v2) — 지금 연 폴더(또는 그 아래 폴더)를 모션그래픽 영상 프로젝트로 준비한다. 미리 넣어 둔 ref/(레퍼런스 mp4)·source/(이미지) 를 확인하고, 빠진 폴더·brief.md(효과 지정 칸 포함)·scene(HyperFrames)을 만들고, 화면 비율을 정하고, source/ 를 동기화한다. 이미지를 추가·교체한 뒤 다시 실행하면 동기화만 한다. v2 프로젝트(brief.md 맨 위 harness: v2)이거나 v2 를 언급할 때 사용.'
 argument-hint: "[--size 16:9|9:16|1:1|4:5] 또는 [하위폴더이름] [--size …]"
 ---
 
@@ -13,5 +13,5 @@ argument-hint: "[--size 16:9|9:16|1:1|4:5] 또는 [하위폴더이름] [--size �
    - "setup 을 먼저" 오류면 `/motion-harness2:mv-setup` 안내 후 멈춘다. 홈·드라이브 최상위 오류면 영상 작업 폴더를 열라고 안내하고 멈춘다.
 2. 출력에서 ref/·source/ 파일 목록을 확인한다.
    - ref/ 에 영상·이미지가 있으면 그것이 주 레퍼런스 후보 — brief.md "주 레퍼런스" 칸에 파일명을 적는다(여러 개면 묻지 말고 첫 파일을 주, 나머지를 보조로 적고 안내에서 한 줄로 알림).
-   - 대화에 주제·문구·색·길이가 있으면 brief.md 해당 칸을 채운다. 링크/ID 레퍼런스는 `node "${CLAUDE_PLUGIN_ROOT}/harness/tools/refs.mjs" fetch <P> <ID|링크>`.
+   - 대화에 주제·문구·색·길이가 있으면 brief.md 해당 칸을 채운다. 레퍼런스에 없어도 꼭 넣고 싶은 효과(예: VHS, 화면 채움 전환)를 말했으면 "효과 지정" 칸에 적는다(③ 사용자 지정). 링크/ID 레퍼런스는 `node "${CLAUDE_PLUGIN_ROOT}/harness/tools/refs.mjs" fetch <P> <ID|링크>`.
 3. 짧게 안내하고 끝: 화면 크기, ref/·source/ 개수, 비어 있는 것(ref/ 가 비었으면 mp4 를 넣거나 `/motion-harness2:mv-refs` 로 추천), 다음은 `/motion-harness2:mv-plan` (하위 폴더 방식이면 `/motion-harness2:mv-plan <P>`).

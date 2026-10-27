@@ -11,7 +11,7 @@ const trans = MH.trans2d;
 원이 커져 화면을 색으로 덮는다. **반환값은 선형 진행도 0..1**(반지름만 eased).
 ```js
 const dot = document.getElementById('dot');   // t 는 draw(t) 의 시각
-trans.fill(t, dot, { t0: 3.2, dur: 0.8, color: DNA.accent, cam, point: [1560, 240] });   // 권장: 월드 점의 화면 위치
+trans.fill(t, dot, { t0: 3.2, dur: 0.8, color: DNA.accent, cam, point: [1560, 240] });   // 권장: 월드 점의 화면 위치. DNA = scene/index.html 의 window.DNA
 trans.fill(t, dot, { t0: 3.2, center: [960, 540] });                                     // 화면 px 직접
 ```
 중심은 `center` 또는 `cam`+`point`(+`depth`)로 준다 — 카메라 레이어 안 요소도 결정적으로 맞는다. 둘 다 없으면 요소를 측정하는 폴백이라 같은 draw 에서 `cam.render(t)` 를 먼저 불러야 한다. 오버레이는 컴포지션 루트에 1회 붙고(z-index 9999) 끝나면 색이 화면을 덮은 채 유지된다.
