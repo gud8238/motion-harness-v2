@@ -110,6 +110,7 @@ function cam(worldEl, o = {}) {
 function allowOverflow(el, depth) { if (depth !== 0 && el && el.setAttribute) el.setAttribute('data-layout-allow-overflow', ''); }
 const rectOf = r => (Array.isArray(r) ? r : [r.x ?? r.left, r.y ?? r.top, r.w ?? r.width, r.h ?? r.height]);
 const _fills = new WeakMap();                           // el → { [t0]: 오버레이 }
+let _rootFills = 0;                                       // id 없는 호스트의 채움 오버레이 번호 (페이지 전체)
 const trans2d = {
   // fill(t, el, {t0, dur=0.8, color, center | cam+point+depth, W, H, r0}) — 원이 커져 화면 전체를 색으로 덮는다. 반환: 진행도 0..1(선형, 반지름은 E.inOut)
   //   중심(화면 px): center:[sx,sy] 또는 {cam, point:[wx,wy], depth=1} (= cam.toScreen(t, point, depth)) — 결정적이라 권장.
@@ -124,7 +125,7 @@ const trans2d = {
       const host = (el.closest && el.closest('[data-composition-id]')) || el.parentNode;
       if (!host) throw new Error('trans.fill: 요소가 문서에 붙어 있지 않습니다(부모 없음). 요소를 DOM 에 넣은 뒤 부르세요.');
       ov = byT[t0] = document.createElement('div');
-      ov.id = `mh-fill-${host.id || 'root'}-${(host.__mhFills = (host.__mhFills || 0) + 1)}`;   // make.mjs 는 이 오버레이가 덮은 글자(text_occluded)를 의도된 가림으로 본다
+      ov.id = host.id ? `mh-fill-${host.id}-${(host.__mhFills = (host.__mhFills || 0) + 1)}` : `mh-fill-root-${++_rootFills}`;   // id 없는 호스트는 페이지 번호(겹치지 않게)   // make.mjs 는 이 오버레이가 덮은 글자(text_occluded)를 의도된 가림으로 본다
       Object.assign(ov.style, { position: 'absolute', inset: '0', zIndex: '9999', pointerEvents: 'none', display: 'none' });
       host.appendChild(ov);
     }

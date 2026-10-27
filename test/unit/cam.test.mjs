@@ -204,6 +204,10 @@ test('fill overlay has a stable mh-fill id per host (make.mjs excuses text it co
   W.MH.trans2d.fill(0, a, { t0: 1, center: [0, 0] }); W.MH.trans2d.fill(0, b, { t0: 2, center: [0, 0] }); W.MH.trans2d.fill(0, a, { t0: 3, center: [0, 0] });
   assert.deepEqual(root.kids.map(k => k.id), ['mh-fill-st1-1', 'mh-fill-st1-2', 'mh-fill-st1-3']);
   W.MH.trans2d.fill(5, a, { t0: 1, center: [0, 0] }); assert.equal(root.kids.length, 3);   // 다시 불러도 같은 오버레이
+  const r2 = { kids: [], appendChild: n => r2.kids.push(n) }, r3 = { kids: [], appendChild: n => r3.kids.push(n) };   // id 없는 호스트 둘
+  W.MH.trans2d.fill(0, { parentNode: r2, closest: () => r2, offsetWidth: 10, offsetHeight: 10 }, { t0: 1, center: [0, 0] });
+  W.MH.trans2d.fill(0, { parentNode: r3, closest: () => r3, offsetWidth: 10, offsetHeight: 10 }, { t0: 1, center: [0, 0] });
+  assert.notEqual(r2.kids[0].id, r3.kids[0].id); assert.match(r2.kids[0].id, /^mh-fill-root-\d+$/);
 });
 test('camera layers (depth ≠ 0) are marked data-layout-allow-overflow; HUD (depth 0) is not', () => {
   const mk = () => { const at = {}; return { style: {}, at, setAttribute: (k, v) => { at[k] = v; } }; };

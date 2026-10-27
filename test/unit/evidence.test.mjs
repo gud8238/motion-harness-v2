@@ -98,6 +98,7 @@ test('vhs: tracking band (full-width edge + shifted rows near it) that moves bet
   assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 16 ? band(1, 1.5, roll(i)) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));    // 0.33초
   assert.ok(!ids(buildCandidates(S(48, () => band(1, 8, 7)), [], 4, 160, 90)).includes('fx.vhs'));   // 고정 샷의 머리띠 경계(같은 행·같은 어긋남) — R5
   assert.ok(!ids(buildCandidates(S(48, i => band(1, 8, i < 24 ? 7 : 40)), [2.02], 4, 160, 90)).includes('fx.vhs'));   // 고정 샷 둘이 컷으로 이어짐 — 컷에서만 '움직임'
+  assert.ok(!ids(buildCandidates(S(48, i => band(1, 3, 60 - Math.round(1.5 * i) % 40)), [], 4, 160, 90)).includes('fx.vhs'));   // 천천히 스크롤되는 구획 경계(프레임당 1~2행, 넘어가면 아래에서 다시) ≠ 트래킹 띠
   const cut = buildCandidates(S(36, i => i >= 6 && i < 30 ? band(1, 1.5, roll(i)) : band(0.4, 0.1)), [1.56], 3, 160, 90).filter(x => x.id === 'fx.vhs');
   assert.ok(cut.length === 1 && cut[0].t0 <= 0.6 && cut[0].t1 >= 2.4, JSON.stringify(cut));   // 오버레이는 컷을 넘어 이어진다 (레퍼런스 A 되감기)
   const short = buildCandidates(S(36, i => i >= 12 && i < 17 ? band(1, 1.5, i < 15 ? 30 : 31) : band(0.4, 0.1)), [], 3, 160, 90);
@@ -264,8 +265,11 @@ test('spikeCuts: periodic flicker, sustained motion, abrupt start/stop of motion
 test('mergeCuts: union, sorted, near-duplicates and edge times dropped', () => {
   assert.deepEqual(mergeCuts([[2.07, 16.98], [2.0667, 7.33, 16.983, 19.02]], 19.05), [2.07, 7.33, 16.98]);
   assert.deepEqual(mergeCuts([], 5), []);
-  assert.deepEqual(mergeCuts([[], [25.0167, 25.2]], 40), [25.02, 25.2]);   // 한 감지기의 0.18초 간격 두 컷(검은 띠 전환)은 둘 다 남는다
-  assert.deepEqual(mergeCuts([[2.0667, 2.0833]], 19), [2.07]);             // 같은 목록의 1프레임 차 중복은 하나
+  assert.deepEqual(mergeCuts([[], [25.0167, 25.2]], 40, 60), [25.02, 25.2]);   // 한 감지기의 0.18초 간격 두 컷(검은 띠 전환)은 둘 다 남는다
+  assert.deepEqual(mergeCuts([[2.0667, 2.0833]], 19, 60), [2.07]);         // 같은 목록의 1프레임 차 중복은 하나
+  assert.deepEqual(mergeCuts([[5, 5.0833]], 19, 24), [5]);                  // 24fps 2프레임 차 = 같은 컷
+  assert.deepEqual(mergeCuts([[5, 5.125]], 19, 24), [5, 5.13]);             // 24fps 3프레임 차 = 다른 컷
+  assert.deepEqual(mergeCuts([[5, 5.05]], 19, 60), [5, 5.05]);              // 60fps 3프레임 차 = 다른 컷
 });
 test('frameDiffs + spikeCuts on decoded video: hard cut between two flat colours of similar brightness; smooth pan has none', () => {
   const f = mk('cut.mp4', ['-f', 'lavfi', '-i', 'color=c=0xF5F5F5:s=320x180:r=30:d=1', '-f', 'lavfi', '-i', 'color=c=0xF2C94C:s=320x180:r=30:d=1', '-filter_complex', '[0][1]concat=n=2:v=1[v]', '-map', '[v]']);

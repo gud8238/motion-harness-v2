@@ -81,7 +81,7 @@ test('vhs: 트래킹 띠 y 는 1/12 초 단계 안에서 같고 단계마다 달
   assert.equal(y(1.0), y(1.0 + 1 / 12 - 0.001)); assert.equal(y(2.5), y(2.5 + 0.05));
   const set = new Set(); for (let s = 0; s < 24; s++) set.add(y(s / 12 + 0.01));
   assert.ok(set.size >= 20, `단계마다 달라야 함: ${set.size}`);
-  for (const s of set) { const p = parseFloat(s); assert.ok(p >= 0 && p <= 90, s); }
+  for (const s of set) { const p = parseFloat(s); assert.ok(p >= 6 && p <= 90, s); }   // 위 가장자리에서 떨어짐(화면 끝 경계와 섞이지 않게)
   assert.match(band.style.height, /^10%$/);
 });
 test('vhs: 트래킹 띠 = 밝은 윗줄 + 어두운 몸통(어떤 바탕에서도 화면 폭 경계) + 줄무늬 조각들이 단계마다 서로 다르게 가로로 어긋남 (fx.vhs 감지와 맞춤)', () => {
@@ -97,6 +97,7 @@ test('vhs: 트래킹 띠 = 밝은 윗줄 + 어두운 몸통(어떤 바탕에서�
   const a = offs(1.01), b = offs(1.01 + 1 / 12);
   assert.ok(new Set(a).size >= 3 && JSON.stringify(a) !== JSON.stringify(b), JSON.stringify([a, b]));
   assert.deepEqual(offs(1.01), offs(1.04));                       // 같은 단계 안에서는 고정
+  for (let k = 0; k < 120; k++) { const o = offs(k / 12 + 0.01); for (let j = 1; j < o.length; j++) assert.ok(Math.abs(o[j] - o[j - 1]) >= 2 * 1920 / 160 - 1e-6, `단계 ${k}: 이웃 조각 어긋남 ${JSON.stringify(o)}`); }
   for (const o of [...a, ...b]) assert.ok(Math.abs(o) <= 1920 / 160 * 6 + 1e-9, `${o}`);   // 분석 160폭 기준 ±6px 안
   assert.equal(root.children.length, n); assert.equal(band.children.length, strips.length);
 });
@@ -179,4 +180,15 @@ test('vhs: 트래킹 띠는 화면 폭 전체, 줄무늬 조각은 최대 어긋
   const { band } = parts(build({}, { clientWidth: 1600 }).root);
   assert.equal(band.style.left, '0'); assert.equal(band.style.right, '0');
   for (const st of band.children) { assert.equal(st.style.left, '-80px'); assert.equal(st.style.right, '-80px'); }   // u = 1600/160 = 10px
+});
+
+test('vhs: color 를 안 주면 라벨·타임코드에 어두운 판(밝은 바탕에서도 대비 통과), color 를 주면 판 없음', () => {
+  const a = parts(build({ label: 'PLAY' }).root), b = parts(build({ label: 'PLAY', color: '#1d1d1f' }).root);
+  for (const e of [a.label, a.tc]) { assert.match(e.style.background, /rgba\(0,\s*0,\s*0,\s*\.55\)/); assert.match(e.style.padding, /px/); assert.ok(parseFloat(e.style.borderRadius) > 0); assert.equal(e.style.color, '#fff'); }
+  for (const e of [b.label, b.tc]) { assert.ok(!e.style.background, e.style.background); assert.equal(e.style.color, '#1d1d1f'); }
+});
+test('vhs: id 없는 상자 여러 개 → 띠 id 가 겹치지 않는다 (mh-vhs-root-1, -2 …)', () => {
+  const { doc } = makeEl(), W = loadRuntime(RT, { document: doc }), ids = [];
+  for (let k = 0; k < 3; k++) { const el = mk(); el.ownerDocument = doc; el.clientHeight = 1080; W.MH.fx.vhs(el, {}); ids.push(el.children[0].children[1].id); }
+  assert.equal(new Set(ids).size, 3, JSON.stringify(ids)); assert.ok(ids.every(i => /^mh-vhs-root-\d+$/.test(i)), JSON.stringify(ids));
 });

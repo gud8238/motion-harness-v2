@@ -24,7 +24,7 @@ export const TH = {
   rackDur: 1.5, rackCells: 2, rackDom: 1.5, rackDrop: 0.5, rackMove: 1, rackFloor: 20, rackStep: 4,   // lens.rack (카메라가 거의 멈춰 있을 때만, 프레임당 px; 두 칸 모두 앞뒤로 라플라시안 분산 ≥20, 한 프레임에 4배 넘게 뛰지 않음 = 내용이 생기거나 사라진 게 아니라 초점이 옮겨 감)
   mblurMove: 3, mblurRatio: 2.2, mblurShare: 0.3, mblurMin: 4,               // lens.mblur (흐림 비 = 시계열 중앙값의 배수)
   smearMove: 1, smearRatio: 2.2, smearRun: 4, smearWin: 1,                  // lens.smear (흐림 비 기준 = 같은 샷 ±1초 중앙값 — 글자 줄 같은 고정 줄무늬는 늘 높다, R5)
-  vhsCover: 0.95, vhsStep: 6, vhsNear: 4, vhsBandJit: 0.4, vhsMove: 2, vhsDur: 0.4, vhsGap: 0.17,   // fx.vhs: 화면 폭 95%↑를 가로지르는 경계(밝기 6↑) + 근처 ±4행 어긋남 0.4px↑, 앞 1~2프레임보다 2행↑ 옮겨 감(R5: 고정 경계 제외), 0.4초↑ (0.17초 빈틈 허용, 오버레이라 컷을 넘어 이어짐)
+  vhsCover: 0.95, vhsStep: 6, vhsNear: 4, vhsBandJit: 0.4, vhsMove: 2, vhsSpeed: 0.5, vhsDur: 0.4, vhsGap: 0.17,   // fx.vhs: 화면 폭 95%↑를 가로지르는 경계(밝기 6↑) + 근처 ±4행 어긋남 0.4px↑, 앞 1~2프레임보다 2행↑ 옮겨 감(R5: 고정 경계 제외), 구간 안 띠 이동 중앙값 ≥ 높이의 0.5배/초(천천히 스크롤되는 구획 경계 제외), 0.4초↑ (0.17초 빈틈 허용, 오버레이라 컷을 넘어 이어짐)
   glitchJitter: 2.0, glitchMaxDur: 0.5, glitchBursts: 2, jitterRows: 0.1,   // fx.glitch (jitter = 시계열 중앙값 + 이 값; 텍스처 있는 행 쌍이 10% 미만인 프레임은 0)
   fillLo: 0.4, fillHi: 0.85, fillWin: 1.0, fillDE: 10,                       // trans.fill (R5: ≥0.85 = 채움; 단색 바탕 A → B 채움은 중간 프레임이 A·B 둘 중 하나(ΔE<10)여야 — 디졸브·컷 제외)
   zoomWin: 0.5, zoomRate: 1.5,                                               // trans.zoomThrough (배/초)
@@ -34,7 +34,7 @@ export const TH = {
   morphDt: 0.5, morphSig: 0.6, morphMinArea: 0.01, morphGap: 0.1, morphCam: 1,   // morph.shape: 0.5초 사이 모양 유사도 < 0.6, 덩어리 ≥1%, 0.1초까지는 안 보여도 됨, 카메라 이동 < 1px/프레임
   morphNear: 2, morphAreaLo: 0.33, morphAreaHi: 3, edgePx: 2,                // 같은 자리(덩어리 크기 2배 안)의 같은 색 조각들을 합쳐 비교, 면적 1/3~3배, 화면 끝 2px 에 닿은 덩어리는 제외
   mergeGap: 0.3, perId: 3, stripMin: 0.5,                                    // 병합·개수·strip 최소 구간(초)
-  cutW: 64, cutFps: 60, cutMin: 0.02, cutRatio: 7, cutQ: 0.9, cutRise: 3, cutWin: 0.5, cutEx: 0.04, cutGap: 0.2, cutSame: 0.04,   // 컷(R7): RGB 64폭 원래 fps(≤60) 프레임 차이(0~1) ≥0.02, 앞·뒤 0.5초 중 조용한 쪽 90% 분위의 7배↑, 바쁜 쪽 중앙값의 3배↑인 한 프레임 튐
+  cutW: 64, cutFps: 60, cutMin: 0.02, cutRatio: 7, cutQ: 0.9, cutRise: 3, cutWin: 0.5, cutEx: 0.04, cutGap: 0.2, cutSame: 2.5,   // 컷(R7; cutGap = 다른 감지기끼리 같은 컷 초, cutSame = 한 감지기 안 같은 컷 프레임): RGB 64폭 원래 fps(≤60) 프레임 차이(0~1) ≥0.02, 앞·뒤 0.5초 중 조용한 쪽 90% 분위의 7배↑, 바쁜 쪽 중앙값의 3배↑인 한 프레임 튐
 };
 
 const evenH = (w, P) => Math.max(2, Math.round(w * P.height / P.width / 2) * 2);
@@ -68,11 +68,11 @@ export function spikeCuts(d, fps) {
   }
   return out;
 }
-// 여러 컷 목록 합치기(목록 = 감지기 하나): 다른 목록의 cutGap 안 컷은 같은 컷으로 보고 앞 목록 것을 남긴다. 같은 목록 안에서는 cutSame(약 2프레임) 안만 중복 —
+// 여러 컷 목록 합치기(목록 = 감지기 하나): 다른 목록의 cutGap 안 컷은 같은 컷으로 보고 앞 목록 것을 남긴다. 같은 목록 안에서는 cutSame 프레임(fps 기준) 안만 중복 —
 // 한 감지기가 0.2초 간격으로 낸 두 컷(검은 띠가 닫혔다 열리는 전환)은 둘 다 남는다. 영상 양 끝 0.05초 안은 버림, 소수 2자리, 시간순
-export function mergeCuts(lists, dur) {
-  const out = [];
-  lists.forEach((L, li) => { for (const t of [...(L || [])].filter(t => Number.isFinite(t) && t > 0.05 && t < dur - 0.05).sort((a, b) => a - b)) if (!out.some(o => Math.abs(o.t - t) <= (o.li === li ? TH.cutSame : TH.cutGap))) out.push({ t, li }); });
+export function mergeCuts(lists, dur, fps = 30) {
+  const out = [], same = TH.cutSame / (fps > 0 ? fps : 30);
+  lists.forEach((L, li) => { for (const t of [...(L || [])].filter(t => Number.isFinite(t) && t > 0.05 && t < dur - 0.05).sort((a, b) => a - b)) if (!out.some(o => Math.abs(o.t - t) <= (o.li === li ? same : TH.cutGap) + 1e-9)) out.push({ t, li }); });
   return out.map(o => +o.t.toFixed(2)).sort((a, b) => a - b);
 }
 
@@ -287,8 +287,12 @@ const RULES = {
     });
     const gap = Math.max(1, Math.round(TH.vhsGap * x.fps));
     // 컷에서 나누지 않는다: VHS 는 편집 위에 덮인 오버레이라 컷을 넘어 이어진다(레퍼런스 A 1.83–2.33 은 2.07 컷을 걸친 되감기)
+    const fast = ([i0, i1]) => {   // 트래킹 띠는 프레임마다 크게 뛰거나 빠르게 구른다 — 스크롤되는 구획 경계는 프레임당 1~2행씩 흐른다
+      const d = []; for (let i = Math.max(1, i0); i <= i1; i++) if (x.S[i].band && x.S[i - 1].band) d.push(Math.abs(x.S[i].band.y - x.S[i - 1].band.y));
+      return d.length && lowMedian(d) >= TH.vhsSpeed * x.H / x.fps;
+    };
     return runs(idx, gap)
-      .filter(([i0, i1]) => i1 - i0 + 1 >= k).map(([i0, i1]) => {
+      .filter(([i0, i1]) => i1 - i0 + 1 >= k && fast([i0, i1])).map(([i0, i1]) => {
         const hits = idx.filter(i => i >= i0 && i <= i1); let j = 0; for (const i of hits) j += x.S[i].band.jitter / hits.length;
         return { id: 'fx.vhs', t0: x.T(i0), t1: x.T(i1) + 1 / x.fps, score: score((i1 - i0 + 1) / x.fps, TH.vhsDur), signal: `움직이는 트래킹 띠(화면 폭 ${pct(TH.vhsCover)}%↑ 가로 경계 + 근처 행 어긋남 평균 ${j.toFixed(1)}px) ${hits.length}프레임 · ${f2((i1 - i0 + 1) / x.fps)}s` };
       });

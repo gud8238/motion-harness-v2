@@ -67,7 +67,7 @@ async function analyzeVideo(file) {
   const sceneCuts = [...(sc.stderr || '').matchAll(/pts_time:([\d.]+)/g)].map(m => +m[1]);
   let spikes = [];
   try { const fd = frameDiffs(file, P); spikes = spikeCuts(fd.d, fd.fps); } catch (e) { console.error(`⚠ 감지 실패: frameDiffs: ${e.message}`); }
-  const cuts = mergeCuts([sceneCuts, spikes], P.duration);
+  const cuts = mergeCuts([sceneCuts, spikes], P.duration, P.fps);
   const bounds = [0, ...cuts, P.duration], shots = [];
   for (let i = 0; i < bounds.length - 1; i++) shots.push({ i: i + 1, start: +fmt(bounds[i]), end: +fmt(bounds[i + 1]), dur: +fmt(bounds[i + 1] - bounds[i]) });
   const durs = shots.map(s => s.dur).sort((a, b) => a - b);
