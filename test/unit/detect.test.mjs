@@ -1,0 +1,78 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { globalMotion, sharpness, directionalBlur, fillRatio, rowJitter, accentBlobs, sigSimilarity } from '../../harness/tools/lib/detect.mjs';
+import { pattern, shift, zoom, rotate, blurRegion, hBlur, flood, jitterRows, disk, rect } from '../helpers/frames.mjs';
+
+const w = 160, h = 90, P = pattern(w, h, 1);
+test('globalMotion recovers shift', () => { const m = globalMotion(P, shift(P, w, h, 4, -2), w, h); assert.ok(Math.abs(m.dx - 4) < 0.6 && Math.abs(m.dy + 2) < 0.6 && Math.abs(m.scale - 1) < 0.02); });
+test('globalMotion recovers zoom', () => { const m = globalMotion(P, zoom(P, w, h, 1.06), w, h); assert.ok(Math.abs(m.scale - 1.06) < 0.02); });
+test('static frames → zero motion', () => { const m = globalMotion(P, P, w, h); assert.ok(Math.abs(m.dx) < 0.1 && Math.abs(m.scale - 1) < 0.005); });
+test('flat frames do not throw', () => { const z = new Uint8Array(w * h).fill(128); assert.doesNotThrow(() => globalMotion(z, z, w, h)); });
+test('sharpness: blurred edges lower than sharp center', () => { const s = sharpness(blurRegion(P, w, h, 'edges', 4), w, h); assert.ok(s[5] > 2 * s[0]); });
+test('directionalBlur detects horizontal smear', () => { const d = directionalBlur(hBlur(P, w, h, 6), w, h); assert.ok(d.ratio > 2.5); });
+test('fillRatio', () => { assert.ok(Math.abs(fillRatio(flood(w, h, '#F2C94C', 0.95), w, h).ratio - 0.95) < 0.03); });
+test('rowJitter', () => { assert.ok(rowJitter(jitterRows(P, w, h, 4, 2), w, h) > 1.5 && rowJitter(P, w, h) < 0.5); });
+test('accentBlobs + sigSimilarity', () => {
+  const a = accentBlobs(disk(w, h, '#F2C94C', 80, 45, 20), w, h, ['#F2C94C'])[0];
+  const b = accentBlobs(rect(w, h, '#F2C94C', 60, 25, 40, 40), w, h, ['#F2C94C'])[0];
+  assert.ok(sigSimilarity(a.sig, a.sig) > 0.99 && sigSimilarity(a.sig, b.sig) < 0.9);
+});
+
+// ---- 추가 검증 ----
+const near = (v, t, tol, msg) => assert.ok(Math.abs(v - t) < tol, `${msg}: ${v} (기대 ${t}±${tol})`);
+test('globalMotion: sub-pixel shift', () => { const m = globalMotion(P, shift(P, w, h, 2.3, 1.6), w, h); near(m.dx, 2.3, 0.3, 'dx'); near(m.dy, 1.6, 0.3, 'dy'); });
+test('globalMotion: identity result shape on static frames', () => {
+  const m = globalMotion(P, P, w, h);
+  assert.deepEqual(Object.keys(m).sort(), ['dx', 'dy', 'parallax', 'res', 'rot', 'scale']);
+  near(m.rot, 0, 0.05, 'rot'); near(m.res, 0, 0.05, 'res'); near(m.parallax, 0, 0.05, 'parallax');
+});
+test('globalMotion: flat frames → identity', () => {
+  const z = new Uint8Array(w * h).fill(128);
+  assert.deepEqual(globalMotion(z, z, w, h), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0 });
+});
+test('globalMotion: rotation sign is clockwise-positive (y down)', () => { const m = globalMotion(P, rotate(P, w, h, 2), w, h); near(m.rot, 2, 0.4, 'rot'); near(m.scale, 1, 0.02, 'scale'); });
+test('globalMotion: zoom keeps center fixed', () => { const m = globalMotion(P, zoom(P, w, h, 0.95), w, h); near(m.scale, 0.95, 0.02, 'scale'); near(m.dx, 0, 0.3, 'dx'); near(m.dy, 0, 0.3, 'dy'); });
+test('globalMotion: parallax when top half moves alone', () => {
+  const S = shift(P, w, h, 4, 0), b = Uint8Array.from(P); b.set(S.subarray(0, w * h / 2));
+  const m = globalMotion(P, b, w, h);
+  assert.ok(m.parallax > 2.5, `parallax ${m.parallax}`); assert.ok(m.res > 1, `res ${m.res}`);
+  assert.ok(globalMotion(P, shift(P, w, h, 4, 0), w, h).parallax < 0.3);
+});
+test('globalMotion: portrait 9:16 frames', () => {
+  const Q = pattern(90, 160, 5), m = globalMotion(Q, shift(Q, 90, 160, -3, 5), 90, 160);
+  near(m.dx, -3, 0.6, 'dx'); near(m.dy, 5, 0.6, 'dy');
+});
+test('globalMotion: tiny frames do not throw', () => {
+  const t = pattern(16, 9, 2);
+  assert.deepEqual(globalMotion(t, t, 16, 9), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0 });
+});
+test('globalMotion: fast enough for 480 pairs', () => {
+  const b = zoom(P, w, h, 1.03), n = 60, t0 = performance.now();
+  for (let i = 0; i < n; i++) globalMotion(P, b, w, h);
+  const ms = (performance.now() - t0) / n;
+  assert.ok(ms < 10, `${ms.toFixed(2)} ms/호출`);
+});
+test('sharpness: grid shape and row-major order', () => {
+  const s = sharpness(blurRegion(P, w, h, [0, 0, w / 2, h], 4), w, h, [2, 1]);
+  assert.ok(s instanceof Float32Array && s.length === 2); assert.ok(s[1] > 2 * s[0]);
+  assert.equal(sharpness(P, w, h).length, 12);
+});
+test('directionalBlur: angle is the smear direction', () => {
+  assert.equal(directionalBlur(hBlur(P, w, h, 6), w, h).angle, 0);
+  const d = directionalBlur(P, w, h); assert.ok(d.ratio < 2, `무늬 자체 비 ${d.ratio}`);
+  assert.deepEqual(directionalBlur(new Uint8Array(w * h).fill(50), w, h), { ratio: 1, angle: 0 });
+});
+test('fillRatio: hex of dominant color', () => { const f = fillRatio(flood(w, h, '#F2C94C', 0.6), w, h); near(f.ratio, 0.6, 0.03, 'ratio'); assert.equal(f.hex.toLowerCase(), '#f2c94c'); });
+test('rowJitter: flat frame → 0', () => { assert.equal(rowJitter(new Uint8Array(w * h).fill(90), w, h), 0); });
+test('accentBlobs: centroid, bbox, area, min-area filter', () => {
+  const r = accentBlobs(rect(w, h, '#F2C94C', 60, 25, 40, 40), w, h, ['#F2C94C', '#2D9CDB']);
+  assert.equal(r.length, 1); const b = r[0];
+  near(b.cx, 79.5, 0.01, 'cx'); near(b.cy, 44.5, 0.01, 'cy'); assert.deepEqual(b.bbox, [60, 25, 99, 64]);
+  near(b.area, 1600 / (w * h), 1e-9, 'area'); assert.equal(b.hex, '#F2C94C'); assert.ok(b.sig instanceof Float32Array && b.sig.length === 16);
+  assert.deepEqual(accentBlobs(rect(w, h, '#F2C94C', 10, 10, 5, 5), w, h, ['#F2C94C']), []);
+  assert.deepEqual(accentBlobs(disk(w, h, '#F2C94C', 80, 45, 20), w, h, []), []);
+});
+test('sigSimilarity is rotation-invariant (cyclic)', () => {
+  const a = Float32Array.from({ length: 16 }, (_, i) => i < 4 ? 1 : 0.3), b = Float32Array.from({ length: 16 }, (_, i) => a[(i + 5) % 16]);
+  near(sigSimilarity(a, b), 1, 1e-6, 'sim');
+});
