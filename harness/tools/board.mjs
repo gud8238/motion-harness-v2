@@ -1,10 +1,13 @@
 // 스토리보드: HyperFrames 로 실제 장면을 스냅샷해 라벨을 붙여 한 장으로
 //   node board.mjs 모션1                    장면마다 대표 시점(data-mh-key, 없으면 길이의 60%) → work/storyboard.png + .html + kf.json
+//                                           무대(stage)는 비트마다 한 칸 (비트 시작 + 비트 길이의 60%)
 //   node board.mjs 모션1 --times 1,2.5,4    지정 시점 → work/stills.png
 //   node board.mjs 모션1 --strip s3 --n 8   장면 s3 를 n등분한 연속 프레임 (움직임·이징 확인) → work/strip_s3.png
 import fs from 'fs';
 import path from 'path';
 import { projectDir, parseArgs, die, hosts, hfJSON, board, ensureDir, ROOT } from './_common.mjs';
+import { readBeats } from './lib/plan.mjs';
+import { storyboardShots } from './lib/board-shots.mjs';
 
 const { pos, opt } = parseArgs();
 const proj = projectDir(pos[0]);
@@ -23,8 +26,9 @@ else if (opt.strip) {
   const n = +(opt.n || 8); tag = `strip_${s.id}`;
   shots = Array.from({ length: n }, (_, i) => { const t = r3(s.start + s.dur * (i + 0.5) / n); return { t, label: `${s.id} · ${t.toFixed(2)}s` }; });
 } else {
-  tag = 'storyboard';
-  shots = scenes.map((s, i) => ({ t: r3(s.start + (s.key != null && s.key !== undefined && !isNaN(+s.key) ? +s.key : s.dur * 0.6)), id: s.id, dur: s.dur, label: `#${i + 1} ${s.title || s.id}   ${s.start.toFixed(1)}–${(s.start + s.dur).toFixed(1)}s  [${s.kind || 'scene'}]`, sub: s.note }));
+  tag = 'storyboard';   // 무대(kind stage)는 compositions 파일의 비트 JSON 으로 비트마다 한 칸
+  const beatsOf = h => { const f = path.join(sceneDir, h.src || `compositions/${h.id}.html`); return fs.existsSync(f) ? readBeats(fs.readFileSync(f, 'utf8'), h.id) : []; };
+  shots = storyboardShots(scenes, beatsOf);
 }
 
 const fdir = path.join(work, 'frames', tag);

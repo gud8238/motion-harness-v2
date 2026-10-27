@@ -1,6 +1,7 @@
 // HyperFrames 장면 관리
 //   node scene.mjs add 모션1 s2 canvas --dur 4 [--start 4] --title "규칙 1" --note "스토리보드 설명" [--key 2.5]
 //        종류: dom (타이포·레이아웃·UI) | canvas (절차적 그래픽·사진 합성, MH) | three (3D·턴테이블, MH3)
+//              | stage (원테이크 무대: 월드·카메라·세트·배우·비트, MH.stage2d — 비트 JSON 은 compositions/<id>.html 의 <id>-beats)
 //        --start 를 생략하면 마지막 장면 뒤에 붙인다. 겹치게 하려면(전환) --start 를 앞당긴다.
 //   node scene.mjs list 모션1                 장면 표
 //   node scene.mjs set 모션1 s2 --start 3.5 --dur 5 --title ... --note ... --key ...   (호스트 속성 수정)
@@ -32,7 +33,7 @@ const save = () => { setRootDuration(); fs.writeFileSync(idxFile, idx); };
 
 if (cmd === 'add') {
   if (!id || !/^[a-z][a-z0-9-]*$/.test(id)) die('장면 id 는 영문 소문자로 시작 (예: s1, intro, turn-3d)');
-  if (!['dom', 'canvas', 'three'].includes(kind)) die('종류: dom | canvas | three');
+  if (!['dom', 'canvas', 'three', 'stage'].includes(kind)) die('종류: dom | canvas | three | stage');
   if (hosts(idx).some(h => h.id === id)) die(`이미 있는 장면: ${id}`);
   const dur = +(opt.dur || 4), last = hosts(idx).filter(h => h.track !== 'captions').reduce((m, h) => Math.max(m, h.start + h.dur), 0);
   const start = opt.start != null ? +opt.start : last;
