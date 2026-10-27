@@ -2,5 +2,8 @@
   "hyperframes": "0.8.202",
   "three": "0.159.0",
   "gsap": "3.14.2",
-  "playwright": "^1.48.0"
+  "playwright": "^1.48.0",
+  "flubber": "0.4.2",
+  "opentype.js": "1.3.4",
+  "pretendard": "1.3.9"
 }

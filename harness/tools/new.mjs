@@ -33,7 +33,7 @@ const applySize = (html, [W, H]) => html
 const aspectOf = ([W, H]) => Object.entries(ASPECT).find(([, v]) => v[0] === W && v[1] === H)?.[0] || `${W}x${H}`;
 const readSize = html => { const m = html.match(/id="root"[^>]*?data-width="(\d+)"[^>]*?data-height="(\d+)"/); return m ? [+m[1], +m[2]] : null; };
 
-// 0) 설치 확인 (폴더를 만들기 전에): 하네스 런타임 + three + gsap
+// 0) 설치 확인 (폴더를 만들기 전에): 하네스 런타임 + three + gsap + flubber + opentype.js
 const NM = path.join(DATA, 'node_modules');
 const libs = [
   [path.join(HARNESS, 'runtime', 'mh.js'), 'mh.js'],
@@ -41,10 +41,13 @@ const libs = [
   [path.join(HARNESS, 'runtime', 'mh-cam.js'), 'mh-cam.js'],
   [path.join(HARNESS, 'runtime', 'mh-lens.js'), 'mh-lens.js'],
   [path.join(HARNESS, 'runtime', 'mh-fx.js'), 'mh-fx.js'],
+  [path.join(HARNESS, 'runtime', 'mh-morph.js'), 'mh-morph.js'],
   [path.join(HARNESS, 'runtime', 'mh-three.js'), 'mh-three.js'],
   [path.join(NM, 'three', 'build', 'three.min.js'), 'three.min.js'],
   [path.join(NM, 'gsap', 'dist', 'gsap.min.js'), 'gsap.min.js'],
   [path.join(NM, 'gsap', 'dist', 'CustomEase.min.js'), 'CustomEase.min.js'],
+  [path.join(NM, 'flubber', 'build', 'flubber.min.js'), 'flubber.min.js'],
+  [path.join(NM, 'opentype.js', 'dist', 'opentype.min.js'), 'opentype.min.js'],
 ];
 const missing = libs.filter(([s]) => !fs.existsSync(s));
 if (missing.length) die('설치가 끝나지 않았습니다 (' + missing.map(m => m[1]).join(', ') + '). 먼저 setup 을 실행하세요 (/motion-harness2:mv-setup).');
@@ -73,6 +76,10 @@ if (fresh) {
 for (const [s, d] of libs) fs.copyFileSync(s, path.join(scene, 'assets', 'lib', d));
 const font = path.join(DATA, 'fonts', 'PretendardVariable.woff2');
 if (fs.existsSync(font)) fs.copyFileSync(font, path.join(scene, 'assets', 'fonts', 'PretendardVariable.woff2'));
+for (const f of ['Pretendard-Bold.otf', 'Pretendard-ExtraBold.otf']) {   // 글자 모핑용 (없으면 경고만)
+  const src = path.join(DATA, 'fonts', f);
+  fs.existsSync(src) ? fs.copyFileSync(src, path.join(scene, 'assets', 'fonts', f)) : console.log(`  ⚠ ${f} 없음 — 글자 모핑(morph.text)을 쓰려면 setup 을 다시 실행하세요`);
+}
 
 // 3) source/ → scene/assets/source/ (이미지·음악·녹음. 원본은 source/ 에 그대로)
 let synced = 0;

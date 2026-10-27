@@ -23,9 +23,9 @@ const tts = [['edge-tts', ['--help']], ['python', ['-m', 'edge_tts', '--help']],
 tts ? ok('edge-tts (한국어 내레이션)') : console.log('  · edge-tts 없음 (선택) — 한국어 TTS 가 필요하면: pip install edge-tts');
 if (problems) { console.log('\n위 프로그램을 설치한 뒤 다시 실행하세요.'); process.exit(1); }
 
-console.log('\n[2/6] Node 패키지 (playwright · three · gsap)');
-fs.writeFileSync(path.join(DATA, 'package.json'), JSON.stringify({ name: 'motion-harness2-data', private: true, dependencies: { playwright: CONFIG.playwright, three: CONFIG.three, gsap: CONFIG.gsap } }, null, 2));
-const needInstall = opt.update || !['playwright', 'three', 'gsap'].every(p => fs.existsSync(path.join(DATA, 'node_modules', p)));
+console.log('\n[2/6] Node 패키지 (playwright · three · gsap · flubber · opentype.js · pretendard)');
+fs.writeFileSync(path.join(DATA, 'package.json'), JSON.stringify({ name: 'motion-harness2-data', private: true, dependencies: { playwright: CONFIG.playwright, three: CONFIG.three, gsap: CONFIG.gsap, flubber: CONFIG.flubber, 'opentype.js': CONFIG['opentype.js'], pretendard: CONFIG.pretendard } }, null, 2));
+const needInstall = opt.update || !['playwright', 'three', 'gsap', 'flubber', 'opentype.js', 'pretendard'].every(p => fs.existsSync(path.join(DATA, 'node_modules', p)));
 if (needInstall && sh('npm', ['install', '--no-audit', '--no-fund']).status !== 0) { warn('npm install 실패'); process.exit(1); }
 ok('설치됨');
 if (!opt['skip-browser']) { const r = sh('npx', ['playwright', 'install', 'chromium']); r.status === 0 ? ok('Chromium (보드·분석용)') : warn('Chromium 설치 실패 — 다시 실행해 보세요'); }
@@ -65,6 +65,11 @@ if (!fs.existsSync(font) || fs.statSync(font).size < 100000) {
   }
   got ? ok('Pretendard') : warn('폰트 내려받기 실패 — 시스템 폰트로 대체');
 } else ok('Pretendard (이미 있음)');
+// 모핑용 OTF (opentype.js 가 글자 윤곽을 읽는다): npm 패키지 pretendard 에서 복사 (R13)
+for (const f of ['Pretendard-Bold.otf', 'Pretendard-ExtraBold.otf']) {
+  const src = path.join(DATA, 'node_modules', 'pretendard', 'dist', 'public', 'static', f);
+  fs.existsSync(src) ? (fs.copyFileSync(src, path.join(fdir, f)), ok(f + ' (글자 모핑용)')) : warn(f + ' 없음 — 글자 모핑(morph.text)을 쓰려면 setup 을 --update 로 다시 실행하세요');
+}
 
 console.log('\n[6/6] 레퍼런스 카탈로그');
 spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'refs.mjs'), 'catalog'], { stdio: 'inherit' });
