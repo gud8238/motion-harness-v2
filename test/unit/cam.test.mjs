@@ -126,3 +126,71 @@ test('fill: overlay created once, progress and clip-path', () => {
   assert.equal(f(3), 1); f(0.2); assert.equal(made, 1); assert.equal(ov.style.display, 'none');   // 되감기: 결정적
   f(1.5); assert.ok(/circle/.test(ov.style.clipPath));
 });
+
+// ── 리뷰 1차 (R11) ──
+test('zoom interpolates in log space; zoom input clamped', () => {
+  const c = MH.cam(null, { W: 100, H: 100 }).key(0, { zoom: 1 }).key(0, { zoom: 4 }, { dur: 2, ease: 'linear' });
+  near(c.state(1).zoom, 2); near(c.state(0).zoom, 1, 0); near(c.state(2).zoom, 4, 0);
+  assert.equal(MH.cam(null, { W: 100, H: 100 }).key(0, { zoom: 0 }).state(0).zoom, 1e-3);
+  assert.equal(MH.cam(null, { W: 100, H: 100 }).key(0, { zoom: -5 }).state(1).zoom, 1e-3);
+});
+test('zoomThrough: rect center glides to screen center monotonically, no overshoot', () => {
+  const W = 1920, H = 1080, rect = [1500, 200, 120, 80], P = [1560, 240];
+  const c = MH.cam(null, { W, H }); MH.trans2d.zoomThrough(c, rect, { t0: 1, dur: 0.7 });
+  let prev = null;
+  for (let i = 0; i <= 70; i++) {
+    const t = 1 + i * 0.01, [sx, sy] = c.toScreen(t, P), dx = sx - W / 2, dy = sy - H / 2;
+    assert.ok(dx >= -1e-6 && dy <= 1e-6, `overshoot at ${t}: ${dx},${dy}`);   // 시작 오른쪽 위 → 중심
+    if (prev) assert.ok(dx <= prev[0] + 1e-6 && dy >= prev[1] - 1e-6, `non-monotone at ${t}`);
+    prev = [dx, dy];
+  }
+  near(prev[0], 0, 1e-6); near(prev[1], 0, 1e-6);
+  const s0 = c.toScreen(1, P); near(s0[0], c.toScreen(0, P)[0], 1e-6);   // 시작 위치에서 튀지 않음
+});
+test('fill: center option and cam+point are deterministic, no measuring', () => {
+  const made = []; let rects = 0;
+  const W = loadRuntime(RT, { document: { createElement: () => { const o = { style: {} }; made.push(o); return o; } } });
+  const root = { appendChild: n => root.kids.push(n), kids: [] }, parent = { appendChild() { throw new Error('root 에 붙어야 함'); } };
+  const el = { parentNode: parent, closest: s => (s === '[data-composition-id]' ? root : null), offsetWidth: 100, offsetHeight: 60, getBoundingClientRect: () => { rects++; return { left: 0, top: 0, width: 1, height: 1 }; } };
+  const T = W.MH.trans2d;
+  assert.equal(T.fill(1.5, el, { t0: 1, dur: 1, center: [100, 200] }), 0.5);
+  const ov = root.kids[0], r = parseFloat(/circle\(([\d.]+)px at 100(\.0+)?px 200(\.0+)?px\)/.exec(ov.style.clipPath)[1]);
+  near(r, (30 + Math.hypot(1820, 880)) / 2, 0.01);   // r0 = 짧은 변/2 = 30, 끝 = 가장 먼 모서리(1920×1080)
+  const cam = W.MH.cam(null, { W: 1000, H: 500 }).key(0, { x: 100, y: 100, zoom: 2 });
+  T.fill(1.5, el, { t0: 1, dur: 1, cam, point: [110, 100] });
+  assert.match(ov.style.clipPath, /at 520(\.0+)?px 250(\.0+)?px\)$/);
+  const r2 = parseFloat(/circle\(([\d.]+)px/.exec(ov.style.clipPath)[1]);
+  near(r2, (30 + Math.hypot(520, 250)) / 2, 0.01);   // 화면은 cam.W×H
+  assert.equal(rects, 0); assert.equal(made.length, 1);
+  assert.throws(() => T.fill(1.5, { getBoundingClientRect() {}, parentNode: null }, { t0: 1, center: [0, 0] }), /부모/);
+});
+test('fill measuring fallback converts through overlay scale', () => {
+  let ovEl; const W = loadRuntime(RT, { document: { createElement: () => (ovEl = { style: {}, offsetWidth: 1920, getBoundingClientRect: () => ({ left: 100, top: 50, width: 960, height: 540 }) }) } });
+  const root = { appendChild() {} }, el = { parentNode: root, getBoundingClientRect: () => ({ left: 100 + 480 - 25, top: 50 + 270 - 12.5, width: 50, height: 25 }) };   // 중심 = 오버레이 안 (480,270) → 스케일 0.5 → 로컬 (960,540)
+  W.MH.trans2d.fill(1.5, el, { t0: 1, dur: 1 });
+  assert.match(ovEl.style.clipPath, /at 960(\.0+)?px 540(\.0+)?px\)$/);
+  near(parseFloat(/circle\(([\d.]+)px/.exec(ovEl.style.clipPath)[1]), (25 + Math.hypot(960, 540)) / 2, 0.01);   // r0 = 12.5/0.5 = 25
+});
+test('screenSize resolves o → DNA → #root → 1920x1080; cam uses it', () => {
+  const root = { getAttribute: k => ({ 'data-width': '1080', 'data-height': '1920' })[k] };
+  const R = loadRuntime(RT, { document: { createElement: () => ({ style: {} }), getElementById: id => (id === 'root' ? root : null) } });
+  assert.deepEqual(A(R.MH.screenSize({})), [1080, 1920]);
+  assert.deepEqual(A(R.MH.screenSize({ W: 500 })), [500, 1920]);
+  const c = R.MH.cam(null);
+  assert.deepEqual([c.W, c.H], [1080, 1920]); assert.deepEqual({ ...c.state(0) }, { x: 540, y: 960, zoom: 1, rot: 0 });
+  R.DNA = { W: 720, H: 1280 }; assert.deepEqual(A(R.MH.screenSize({})), [720, 1280]);
+  assert.deepEqual(A(MH.screenSize({})), [1920, 1080]);
+});
+test('shake amplitude is in screen units regardless of zoom', () => {
+  const amp = 0.01, W = 1000;
+  for (const z of [0.5, 1, 4]) {
+    const c = MH.cam(null, { W, H: 1000 }).key(0, { zoom: z }).shake(0, 2, amp, 9);
+    const mx = Math.max(...Array.from({ length: 200 }, (_, i) => Math.abs(c.state(i / 100).x - 500) * z));
+    assert.ok(mx <= amp * W + 1e-9 && mx > 0.3 * amp * W, `z=${z} max=${mx}`);
+  }
+});
+test('unknown ease string throws listing valid keys', () => {
+  assert.throws(() => MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'bounce' }), /bounce.*dna.*linear.*inOut/s);
+  assert.throws(() => MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'bez' }));
+  MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'snap' });
+});

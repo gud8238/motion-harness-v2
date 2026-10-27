@@ -56,13 +56,8 @@ function normalize(d) {
   return out;
 }
 const norm = d => (d && d._rig ? d : normalize(d));
-// 화면 크기: o.W/H → window.DNA.W/H → #root 의 data-width/height → 1920×1080 (R10, 세로 9:16 프로젝트 대응)
-function screenSize(o) {
-  const dna = (typeof window !== 'undefined' && window.DNA) || {};
-  let el = null; try { el = typeof document !== 'undefined' && document.getElementById ? document.getElementById('root') : null; } catch (e) { el = null; }
-  const attr = k => { const v = el && (el.getAttribute ? el.getAttribute('data-' + k) : el.dataset && el.dataset[k]); const n = Number(v); return v != null && n > 0 ? n : undefined; };
-  return [o.W ?? dna.W ?? attr('width') ?? 1920, o.H ?? dna.H ?? attr('height') ?? 1080];
-}
+// 화면 크기: MH.screenSize (o.W/H → DNA.W/H → #root data-width/height → 1920×1080, R10)
+const screenSize = o => MH.screenSize(o);
 const pt = (v, x, y) => [(v && v[0]) ?? x, (v && v[1]) ?? y];   // 일부만 준 좌표 [x] 는 성분별로 현재 값
 const blinkOpen = p => (p <= 0 || p >= 1 ? 1 : 1 - clamp(1.25 * Math.sin(Math.PI * p)));   // 가운데 40% 는 완전히 감김
 

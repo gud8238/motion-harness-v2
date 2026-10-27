@@ -162,6 +162,16 @@ function withCam(ctx, cam, fn) {
   ctx.save(); ctx.translate(sx, sy); ctx.rotate(r); ctx.scale(z, z); ctx.translate(-x, -y); fn(); ctx.restore();
 }
 
+// ───────────── 화면 크기 ─────────────
+// o.W/H → window.DNA.W/H → #root(또는 [data-composition-id]) 의 data-width/height → 1920×1080 (R10, 세로 9:16 대응). 반환 [W, H]
+function screenSize(o = {}) {
+  const dna = (typeof window !== 'undefined' && window.DNA) || {};
+  let el = null;
+  try { el = typeof document !== 'undefined' && document.getElementById ? document.getElementById('root') : null; if (!el && typeof document !== 'undefined' && document.querySelector) el = document.querySelector('[data-composition-id]'); } catch (e) { el = null; }
+  const attr = k => { const v = el && (el.getAttribute ? el.getAttribute('data-' + k) : el.dataset && el.dataset[k]); const n = Number(v); return v != null && n > 0 ? n : undefined; };
+  return [o.W ?? dna.W ?? attr('width') ?? 1920, o.H ?? dna.H ?? attr('height') ?? 1080];
+}
+
 // ───────────── 글자 ─────────────
 const FONT = { sans: "'Pretendard','Noto Sans KR','Noto Sans CJK KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif" };
 const font = (size, weight = 700, family = FONT.sans) => `${weight} ${size}px ${family}`;
@@ -436,7 +446,7 @@ const phys = {
 window.MH = {
   TAU, clamp, lerp, seg, map, mix, E, bezier, spring, SPRING, tween, springAt, kf, stagger, quant, beatOf, onBeat, breathe,
   rng, hash, noise, noise2, boil, rgba, mixColor, rr, circle, line, shadow, noShadow, grain, vignette, gradient, paper, withCam,
-  FONT, font, wrap, txt, measure, txtIn, IMG, img, cutout, transitions: TRANS, trans, layer, subtitle,
+  screenSize, FONT, font, wrap, txt, measure, txtIn, IMG, img, cutout, transitions: TRANS, trans, layer, subtitle,
   drive, stage, clear, load, gsapEase,
   motion, move, follow, sim, gsapSpring, phys,
 };
