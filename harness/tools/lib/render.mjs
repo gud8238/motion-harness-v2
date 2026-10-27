@@ -26,9 +26,9 @@ export function rootFps(html) {
 }
 
 // hyperframes check --json → 보고할 findings [{area, ...}]. 알려진 소음(three r150 경고·GPU 로그)과
-// trans.fill 오버레이(id mh-fill-…)가 덮은 글자(text_occluded)는 뺀다 — 화면 채움은 일부러 모든 것을 가린다
+// trans.fill 오버레이(id mh-fill-…)·fx.vhs 트래킹 띠(id mh-vhs-…)가 덮은 글자(text_occluded)는 뺀다 — 일부러 화면을 가로질러 가린다
 export function checkFindings(chk) {
   return Object.entries(chk ?? {}).filter(([, v]) => v && typeof v === 'object' && Array.isArray(v.findings)).flatMap(([k, v]) => v.findings.map(f => ({ area: k, ...f })))
     .filter(f => !(f.code === 'console_warning' && /deprecated with r150|GPU stall|GL Driver/.test(f.message)))
-    .filter(f => !(f.code === 'text_occluded' && /^#mh-fill-/.test(f.containerSelector || '')));
+    .filter(f => !(f.code === 'text_occluded' && /^#mh-(fill|vhs)-/.test(f.containerSelector || '')));
 }

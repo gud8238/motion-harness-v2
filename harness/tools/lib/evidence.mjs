@@ -5,7 +5,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ffmpeg, rawFrames, board, toLab } from '../_common.mjs';
+import { ffmpeg, rawFrames, board, toLab, dE } from '../_common.mjs';
 import * as detect from './detect.mjs';
 
 export const TH = {
@@ -24,9 +24,9 @@ export const TH = {
   rackDur: 1.5, rackCells: 2, rackDom: 1.5, rackDrop: 0.5, rackMove: 1, rackFloor: 20, rackStep: 4,   // lens.rack (카메라가 거의 멈춰 있을 때만, 프레임당 px; 두 칸 모두 앞뒤로 라플라시안 분산 ≥20, 한 프레임에 4배 넘게 뛰지 않음 = 내용이 생기거나 사라진 게 아니라 초점이 옮겨 감)
   mblurMove: 3, mblurRatio: 2.2, mblurShare: 0.3, mblurMin: 4,               // lens.mblur (흐림 비 = 시계열 중앙값의 배수)
   smearMove: 1, smearRatio: 2.2, smearRun: 4, smearWin: 1,                  // lens.smear (흐림 비 기준 = 같은 샷 ±1초 중앙값 — 글자 줄 같은 고정 줄무늬는 늘 높다, R5)
-  vhsCover: 0.95, vhsStep: 6, vhsNear: 4, vhsBandJit: 0.4, vhsDur: 0.4, vhsGap: 0.17,   // fx.vhs: 화면 폭 95%↑를 가로지르는 경계(밝기 6↑) + 근처 ±4행 어긋남 0.4px↑ 프레임이 0.4초↑ (0.17초 빈틈 허용)
+  vhsCover: 0.95, vhsStep: 6, vhsNear: 4, vhsBandJit: 0.4, vhsMove: 2, vhsDur: 0.4, vhsGap: 0.17,   // fx.vhs: 화면 폭 95%↑를 가로지르는 경계(밝기 6↑) + 근처 ±4행 어긋남 0.4px↑, 앞 1~2프레임보다 2행↑ 옮겨 감(R5: 고정 경계 제외), 0.4초↑ (0.17초 빈틈 허용, 오버레이라 컷을 넘어 이어짐)
   glitchJitter: 2.0, glitchMaxDur: 0.5, glitchBursts: 2, jitterRows: 0.1,   // fx.glitch (jitter = 시계열 중앙값 + 이 값; 텍스처 있는 행 쌍이 10% 미만인 프레임은 0)
-  fillLo: 0.4, fillHi: 0.85, fillWin: 1.0,                                   // trans.fill (R5: ≥0.85 = 채움)
+  fillLo: 0.4, fillHi: 0.85, fillWin: 1.0, fillDE: 10,                       // trans.fill (R5: ≥0.85 = 채움; 단색 바탕 A → B 채움은 중간 프레임이 A·B 둘 중 하나(ΔE<10)여야 — 디졸브·컷 제외)
   zoomWin: 0.5, zoomRate: 1.5,                                               // trans.zoomThrough (배/초)
   whipWin: 0.4, whipSpeed: 0.5, whipBlurRise: 1.5, whipNear: 0.5,            // trans.whip (속도 = 폭/초)
   matchDist: 0.08, matchSig: 0.85, matchAreaLo: 0.5, matchAreaHi: 2, matchMinArea: 0.01,   // trans.match (거리 = 대각선 대비; 화면 1% 미만 조각(글자·점)은 매치 컷의 주인공이 아니다)
@@ -34,7 +34,7 @@ export const TH = {
   morphDt: 0.5, morphSig: 0.6, morphMinArea: 0.01, morphGap: 0.1, morphCam: 1,   // morph.shape: 0.5초 사이 모양 유사도 < 0.6, 덩어리 ≥1%, 0.1초까지는 안 보여도 됨, 카메라 이동 < 1px/프레임
   morphNear: 2, morphAreaLo: 0.33, morphAreaHi: 3, edgePx: 2,                // 같은 자리(덩어리 크기 2배 안)의 같은 색 조각들을 합쳐 비교, 면적 1/3~3배, 화면 끝 2px 에 닿은 덩어리는 제외
   mergeGap: 0.3, perId: 3, stripMin: 0.5,                                    // 병합·개수·strip 최소 구간(초)
-  cutW: 64, cutFps: 60, cutMin: 0.02, cutRatio: 7, cutQ: 0.9, cutRise: 3, cutWin: 0.5, cutEx: 0.04, cutGap: 0.2,   // 컷(R7): RGB 64폭 원래 fps(≤60) 프레임 차이(0~1) ≥0.02, 앞·뒤 0.5초 중 조용한 쪽 90% 분위의 7배↑, 바쁜 쪽 중앙값의 3배↑인 한 프레임 튐
+  cutW: 64, cutFps: 60, cutMin: 0.02, cutRatio: 7, cutQ: 0.9, cutRise: 3, cutWin: 0.5, cutEx: 0.04, cutGap: 0.2, cutSame: 0.04,   // 컷(R7): RGB 64폭 원래 fps(≤60) 프레임 차이(0~1) ≥0.02, 앞·뒤 0.5초 중 조용한 쪽 90% 분위의 7배↑, 바쁜 쪽 중앙값의 3배↑인 한 프레임 튐
 };
 
 const evenH = (w, P) => Math.max(2, Math.round(w * P.height / P.width / 2) * 2);
@@ -68,11 +68,12 @@ export function spikeCuts(d, fps) {
   }
   return out;
 }
-// 여러 컷 목록 합치기: 정렬, cutGap 안의 중복은 앞의 것만, 영상 양 끝 0.05초 안은 버림, 소수 2자리
+// 여러 컷 목록 합치기(목록 = 감지기 하나): 다른 목록의 cutGap 안 컷은 같은 컷으로 보고 앞 목록 것을 남긴다. 같은 목록 안에서는 cutSame(약 2프레임) 안만 중복 —
+// 한 감지기가 0.2초 간격으로 낸 두 컷(검은 띠가 닫혔다 열리는 전환)은 둘 다 남는다. 영상 양 끝 0.05초 안은 버림, 소수 2자리, 시간순
 export function mergeCuts(lists, dur) {
-  const all = lists.flat().filter(t => Number.isFinite(t) && t > 0.05 && t < dur - 0.05).sort((a, b) => a - b), out = [];
-  for (const t of all) if (!out.length || t - out.at(-1) > TH.cutGap) out.push(t);
-  return out.map(t => +t.toFixed(2));
+  const out = [];
+  lists.forEach((L, li) => { for (const t of [...(L || [])].filter(t => Number.isFinite(t) && t > 0.05 && t < dur - 0.05).sort((a, b) => a - b)) if (!out.some(o => Math.abs(o.t - t) <= (o.li === li ? TH.cutSame : TH.cutGap))) out.push({ t, li }); });
+  return out.map(o => +o.t.toFixed(2)).sort((a, b) => a - b);
 }
 
 const vivid = hex => { const v = parseInt(String(hex).replace('#', ''), 16); if (!Number.isFinite(v)) return true; const L = toLab([(v >> 16) & 255, (v >> 8) & 255, v & 255]); return Math.hypot(L[1], L[2]) >= TH.accentChroma; };   // 읽을 수 없는 값은 감지기에 넘겨 실패로 보고
@@ -280,11 +281,17 @@ const RULES = {
   },
   'fx.vhs': x => {
     const k = Math.ceil(TH.vhsDur * x.fps - 1e-6), idx = [];
-    x.S.forEach((e, i) => { const b = e.band; if (b && b.cover >= TH.vhsCover && b.jitter >= TH.vhsBandJit) idx.push(i); });
-    return runs(idx, Math.max(1, Math.round(TH.vhsGap * x.fps))).filter(([i0, i1]) => i1 - i0 + 1 >= k).map(([i0, i1]) => {
-      const hits = idx.filter(i => i >= i0 && i <= i1); let j = 0; for (const i of hits) j += x.S[i].band.jitter / hits.length;
-      return { id: 'fx.vhs', t0: x.T(i0), t1: x.T(i1) + 1 / x.fps, score: score((i1 - i0 + 1) / x.fps, TH.vhsDur), signal: `트래킹 띠(화면 폭 ${pct(TH.vhsCover)}%↑ 가로 경계 + 근처 행 어긋남 평균 ${j.toFixed(1)}px) ${hits.length}프레임 · ${f2((i1 - i0 + 1) / x.fps)}s` };
+    x.S.forEach((e, i) => {
+      const b = e.band, prev = [1, 2].map(k => i - k >= 0 ? x.S[i - k].band : null).filter(Boolean);   // 앞 1~2프레임 (초안처럼 프레임이 겹쳐도). 컷 너머와도 비교: 고정 샷 하나는 컷에서 1프레임만 '움직여' 0.4초가 안 된다
+      if (b && prev.length && b.cover >= TH.vhsCover && b.jitter >= TH.vhsBandJit && prev.some(p => Math.abs(b.y - p.y) >= TH.vhsMove)) idx.push(i);
     });
+    const gap = Math.max(1, Math.round(TH.vhsGap * x.fps));
+    // 컷에서 나누지 않는다: VHS 는 편집 위에 덮인 오버레이라 컷을 넘어 이어진다(레퍼런스 A 1.83–2.33 은 2.07 컷을 걸친 되감기)
+    return runs(idx, gap)
+      .filter(([i0, i1]) => i1 - i0 + 1 >= k).map(([i0, i1]) => {
+        const hits = idx.filter(i => i >= i0 && i <= i1); let j = 0; for (const i of hits) j += x.S[i].band.jitter / hits.length;
+        return { id: 'fx.vhs', t0: x.T(i0), t1: x.T(i1) + 1 / x.fps, score: score((i1 - i0 + 1) / x.fps, TH.vhsDur), signal: `움직이는 트래킹 띠(화면 폭 ${pct(TH.vhsCover)}%↑ 가로 경계 + 근처 행 어긋남 평균 ${j.toFixed(1)}px) ${hits.length}프레임 · ${f2((i1 - i0 + 1) / x.fps)}s` };
+      });
   },
   'fx.glitch': x => {
     const base = lowMedian(x.S.map(e => e.jitter)), idx = [];
@@ -303,6 +310,22 @@ const RULES = {
       for (let i = j - 1; i >= Math.max(0, j - win); i--) if (r[i] != null && r[i] < TH.fillLo) {
         out.push({ id: 'trans.fill', t0: x.T(i), t1: x.T(j), score: score(r[j] - r[i], TH.fillHi - TH.fillLo), signal: `단색 영역 ${pct(r[i])}% → ${pct(r[j])}% (${x.S[j].fill.hex}, ${f2(x.T(j) - x.T(i))}s)` });
         break;
+      }
+    }
+    // 단색 바탕 위 채움: 바탕색 A 가 ≥fillHi → (A·B 가 섞인 중간 프레임) → 새 색 B 가 ≥fillHi. 컷 없이, 중간 프레임 1장 이상, 중간 프레임의 주된 색은 A 나 B 뿐
+    const lab = new Map(), L = h => { if (!lab.has(h)) { const v = parseInt(h.slice(1), 16); lab.set(h, toLab([(v >> 16) & 255, (v >> 8) & 255, v & 255])); } return lab.get(h); };
+    const same = (a, b) => dE(L(a), L(b)) < TH.fillDE, hex = i => x.S[i].fill?.hex;
+    for (let j = 2; j < x.n; j++) {
+      if (r[j] == null || r[j] < TH.fillHi || !hex(j) || (r[j - 1] != null && r[j - 1] >= TH.fillHi && hex(j - 1) && same(hex(j - 1), hex(j)))) continue;
+      for (let i = j - 2; i >= Math.max(0, j - win); i--) {
+        if (x.segOf[i] !== x.segOf[j]) break;
+        if (r[i] == null || !hex(i)) break;
+        const mid = []; for (let k = i + 1; k < j; k++) mid.push(k);
+        if (!mid.every(k => hex(k) && (same(hex(k), hex(i)) || same(hex(k), hex(j))))) break;
+        if (r[i] >= TH.fillHi && !same(hex(i), hex(j)) && mid.some(k => r[k] < TH.fillHi)) {
+          out.push({ id: 'trans.fill', t0: x.T(i), t1: x.T(j), score: score(r[j] - Math.min(...mid.map(k => r[k] ?? 1)), TH.fillHi - TH.fillLo), signal: `바탕 ${hex(i)} ${pct(r[i])}% → ${hex(j)} ${pct(r[j])}% 로 채워짐 (${f2(x.T(j) - x.T(i))}s, 컷 없음)` });
+          break;
+        }
       }
     }
     return out;
@@ -403,7 +426,7 @@ const RULES = {
   },
 };
 
-// 시계열 → 후보. 같은 id 의 0.3초 이내 인접 후보는 병합(사이에 컷이 있으면 병합하지 않음), id 당 score 상위 3개, score 내림차순(같으면 시간순).
+// 시계열 → 후보. 같은 id 의 0.3초 이내 인접 후보는 병합(사이나 맞닿은 끝에 컷이 있으면 병합하지 않음), id 당 score 상위 3개, score 내림차순(같으면 시간순).
 // W·H 는 시계열 px 기준 크기(생략하면 series.size, 없으면 160×90). opts.failed: 예외를 던진 규칙 id 가 들어감 (그 규칙 후보만 빠짐)
 export function buildCandidates(series, cuts = [], dur = 0, W = series?.size?.[0] ?? 160, H = series?.size?.[1] ?? 90, opts = {}) {
   const S = series || [], n = S.length, failed = opts.failed || [];
@@ -426,7 +449,7 @@ export function buildCandidates(series, cuts = [], dur = 0, W = series?.size?.[0
     const list = all.filter(c => c.id === id).sort((p, q) => p.t0 - q.t0), merged = [];
     for (const c of list) {
       const m = merged.at(-1);
-      if (m && c.t0 - m.t1 <= TH.mergeGap + 1e-9 && !cs.some(k => k > m.t1 && k < c.t0)) { if (c.score > m.score) { m.score = c.score; m.signal = c.signal; } m.t1 = Math.max(m.t1, c.t1); }
+      if (m && c.t0 - m.t1 <= TH.mergeGap + 1e-9 && !cs.some(k => k >= m.t1 - 0.5 / fps && k <= c.t0 + 0.5 / fps)) { if (c.score > m.score) { m.score = c.score; m.signal = c.signal; } m.t1 = Math.max(m.t1, c.t1); }
       else merged.push({ ...c });
     }
     out.push(...merged.sort((p, q) => q.score - p.score).slice(0, TH.perId));

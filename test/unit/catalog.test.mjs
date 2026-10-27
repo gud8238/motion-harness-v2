@@ -12,7 +12,7 @@ test('catalog entries are well formed: unique ids, module names, detectors, ko',
   const cat = loadCatalog();
   assert.equal(new Set(cat.map(e => e.id)).size, cat.length);
   const modules = ['camera2d', 'stage', 'lens2d', 'fx2d', 'morph', 'transitions'];
-  const detectors = ['globalMotion', 'residualDepth', 'sharpnessMap', 'sharpnessShift', 'directionalBlur', 'compositeFill', 'scaleSpike', 'blurSpike', 'blobAcrossCut', 'blobContour', 'rowJitter'];
+  const detectors = ['globalMotion', 'residualDepth', 'sharpnessMap', 'sharpnessShift', 'directionalBlur', 'compositeFill', 'scaleSpike', 'blurSpike', 'blobAcrossCut', 'blobContour', 'rowJitter', 'trackingBand', 'globalMotion+radialProfile'];
   const kos = [];
   for (const e of cat) {
     assert.equal(typeof e.desc, 'string'); assert.ok(e.desc.length > 0, e.id);

@@ -7,7 +7,7 @@ import { spawnSync } from 'child_process';
 import { buildCandidates, estimateStrength, measureSeries, seriesSize, nameStrips, isAutoStrip, evidenceCell, spikeCuts, frameDiffs, mergeCuts, TH } from '../../harness/tools/lib/evidence.mjs';
 import { parseEffectTable } from '../../harness/tools/lib/plan.mjs';
 import { probe } from '../../harness/tools/_common.mjs';
-import { pattern } from '../helpers/frames.mjs';
+import { pattern, rng } from '../helpers/frames.mjs';
 
 const S = (n, f) => Array.from({ length: n }, (_, i) => ({ t: i / 12, gm: { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0 }, sharp: new Float32Array(12).fill(10), dblur: { ratio: 1 }, fill: { ratio: 0.1, hex: '#ffffff' }, jitter: 0, blobs: [], ...f(i) }));
 test('zoom-out series → cam.push', () => { const c = buildCandidates(S(24, () => ({ gm: { dx: 0, dy: 0, scale: 0.985, rot: 0, parallax: 0 } })), [], 2, 160, 90); assert.ok(c.some(x => x.id === 'cam.push')); });
@@ -89,12 +89,19 @@ test('smear without camera motion → lens.smear', () => {
   assert.ok(ids(c).includes('lens.smear'));
   assert.ok(!ids(buildCandidates(S(48, i => ({ dblur: { ratio: i < 30 ? 1 : 3 } })), [], 4, 160, 90)).includes('lens.smear'));   // 글자 줄이 나타나 계속 남음 = 고정 줄무늬 (R5)
 });
-test('vhs: tracking band (full-width edge + shifted rows near it) ≥0.5s → fx.vhs; band-like line on flat frames or short bursts do not', () => {
-  const band = (cover, jitter) => ({ band: { cover, y: 40, jitter } });
-  const c = buildCandidates(S(36, i => i >= 12 && i < 20 && i !== 15 ? band(1, 1.5) : band(0.4, 0.1)), [], 3, 160, 90).find(x => x.id === 'fx.vhs');
+test('vhs: tracking band (full-width edge + shifted rows near it) that moves between frames ≥0.4s → fx.vhs; flat-frame lines, short bursts, static bands do not', () => {
+  const band = (cover, jitter, y = 40) => ({ band: { cover, y, jitter } });
+  const roll = i => 80 - 7 * (i % 11);   // 띠가 프레임마다 위로 굴러간다
+  const c = buildCandidates(S(36, i => i >= 12 && i < 20 && i !== 15 ? band(1, 1.5, roll(i)) : band(0.4, 0.1)), [], 3, 160, 90).find(x => x.id === 'fx.vhs');
   assert.ok(c && c.t0 === 1 && c.t1 >= 1.6, JSON.stringify(c));
-  assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 20 ? band(1, null) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));   // 평평한 바탕 위 선
-  assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 16 ? band(1, 1.5) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));    // 0.33초
+  assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 20 ? band(1, null, roll(i)) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));   // 평평한 바탕 위 선
+  assert.ok(!ids(buildCandidates(S(36, i => i >= 12 && i < 16 ? band(1, 1.5, roll(i)) : band(0.4, 0.1)), [], 3, 160, 90)).includes('fx.vhs'));    // 0.33초
+  assert.ok(!ids(buildCandidates(S(48, () => band(1, 8, 7)), [], 4, 160, 90)).includes('fx.vhs'));   // 고정 샷의 머리띠 경계(같은 행·같은 어긋남) — R5
+  assert.ok(!ids(buildCandidates(S(48, i => band(1, 8, i < 24 ? 7 : 40)), [2.02], 4, 160, 90)).includes('fx.vhs'));   // 고정 샷 둘이 컷으로 이어짐 — 컷에서만 '움직임'
+  const cut = buildCandidates(S(36, i => i >= 6 && i < 30 ? band(1, 1.5, roll(i)) : band(0.4, 0.1)), [1.56], 3, 160, 90).filter(x => x.id === 'fx.vhs');
+  assert.ok(cut.length === 1 && cut[0].t0 <= 0.6 && cut[0].t1 >= 2.4, JSON.stringify(cut));   // 오버레이는 컷을 넘어 이어진다 (레퍼런스 A 되감기)
+  const short = buildCandidates(S(36, i => i >= 12 && i < 17 ? band(1, 1.5, i < 15 ? 30 : 31) : band(0.4, 0.1)), [], 3, 160, 90);
+  assert.ok(!ids(short).includes('fx.vhs'), JSON.stringify(short));   // 띠가 거의 제자리(1행)인 프레임이 끼면 0.4초가 안 된다
   assert.deepEqual(buildCandidates(S(36, () => ({ jitter: 3, dblur: { ratio: 40 } })), [], 3, 160, 90), []);   // 고정 줄무늬
 });
 test('glitch: ≥2 short jitter bursts → fx.glitch', () => {
@@ -105,6 +112,15 @@ test('glitch: ≥2 short jitter bursts → fx.glitch', () => {
 test('fill: noisy fill ≥0.85 counts as filled (R5)', () => {
   assert.ok(ids(buildCandidates(S(24, i => ({ fill: { ratio: i < 10 ? 0.2 : 0.87, hex: '#f2c94c' } })), [], 2, 160, 90)).includes('trans.fill'));
   assert.ok(!ids(buildCandidates(S(36, i => ({ fill: { ratio: i < 10 ? 0.2 : i < 24 ? 0.6 : 0.95, hex: '#f2c94c' } })), [], 3, 160, 90)).includes('trans.fill'));   // 1초 넘게 걸린 변화
+});
+test('fill on a flat background: colour A (≥85%) → disk of B grows → B (≥85%) without a cut → trans.fill; hard colour cut or dissolve → not', () => {
+  const W_ = '#ffffff', Y = '#f2c94c', f = (ratio, hex) => ({ fill: { ratio, hex } });
+  const grow = i => i < 12 ? f(0.95, W_) : i === 12 ? f(0.8, W_) : i === 13 ? f(0.55, W_) : i === 14 ? f(0.7, Y) : f(0.96, Y);
+  const c = buildCandidates(S(30, grow), [], 2.5, 160, 90).find(x => x.id === 'trans.fill');
+  assert.ok(c && c.t0 >= 0.9 && c.t1 <= 1.3, JSON.stringify(c));
+  assert.ok(!ids(buildCandidates(S(30, i => i < 12 ? f(0.95, W_) : f(0.96, Y)), [], 2.5, 160, 90)).includes('trans.fill'));            // 한 프레임 만에 바뀜 = 컷
+  assert.ok(!ids(buildCandidates(S(30, grow), [1.1], 2.5, 160, 90)).includes('trans.fill'));                                            // 사이에 컷
+  assert.ok(!ids(buildCandidates(S(30, i => i < 12 ? f(0.95, W_) : i < 15 ? f(0.97, '#f8e2a6') : f(0.96, Y)), [], 2.5, 160, 90)).includes('trans.fill'));   // 디졸브(중간색)
 });
 test('zoom-through before a cut → trans.zoomThrough', () => {
   const c = buildCandidates(S(24, i => gm({ scale: i < 12 ? 1.06 : 1 })), [1.0], 2, 160, 90);
@@ -248,6 +264,8 @@ test('spikeCuts: periodic flicker, sustained motion, abrupt start/stop of motion
 test('mergeCuts: union, sorted, near-duplicates and edge times dropped', () => {
   assert.deepEqual(mergeCuts([[2.07, 16.98], [2.0667, 7.33, 16.983, 19.02]], 19.05), [2.07, 7.33, 16.98]);
   assert.deepEqual(mergeCuts([], 5), []);
+  assert.deepEqual(mergeCuts([[], [25.0167, 25.2]], 40), [25.02, 25.2]);   // 한 감지기의 0.18초 간격 두 컷(검은 띠 전환)은 둘 다 남는다
+  assert.deepEqual(mergeCuts([[2.0667, 2.0833]], 19), [2.07]);             // 같은 목록의 1프레임 차 중복은 하나
 });
 test('frameDiffs + spikeCuts on decoded video: hard cut between two flat colours of similar brightness; smooth pan has none', () => {
   const f = mk('cut.mp4', ['-f', 'lavfi', '-i', 'color=c=0xF5F5F5:s=320x180:r=30:d=1', '-f', 'lavfi', '-i', 'color=c=0xF2C94C:s=320x180:r=30:d=1', '-filter_complex', '[0][1]concat=n=2:v=1[v]', '-map', '[v]']);
@@ -256,4 +274,29 @@ test('frameDiffs + spikeCuts on decoded video: hard cut between two flat colours
   const c = spikeCuts(d, fps); assert.equal(c.length, 1); assert.ok(Math.abs(c[0] - 1) <= 1 / 30 + 1e-9, String(c));
   const pan = path.join(tmp, 'pan.mp4'), Q = probe(pan), r = frameDiffs(pan, Q);
   assert.deepEqual(spikeCuts(r.d, r.fps), []);
+});
+
+// ---- 리뷰 합성 영상 (rev17b probe): 평평한 UI 정지 화면·단색 바탕 채움 ----
+const raw = (name, W, H, fps, n, frame) => {
+  const f = path.join(tmp, name), bufs = []; for (let i = 0; i < n; i++) bufs.push(Buffer.from(frame(i / fps)));
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', `${W}x${H}`, '-r', String(fps), '-i', '-', '-pix_fmt', 'yuv420p', '-crf', '18', f], { input: Buffer.concat(bufs), maxBuffer: 1 << 30 });
+  assert.equal(r.status, 0, String(r.stderr)); return f;
+};
+const canvas = (W, H, c) => { const o = new Uint8Array(W * H * 3); for (let i = 0; i < W * H; i++) o.set(c, i * 3); return o; };
+const box = (o, W, H, x0, y0, w, h, c) => { for (let y = Math.max(0, y0); y < Math.min(H, y0 + h); y++) for (let x = Math.max(0, x0); x < Math.min(W, x0 + w); x++) o.set(c, (y * W + x) * 3); };
+const lines = (o, W, H, y0, n, seed, k = W / 640) => { const r = rng(seed); for (let l = 0; l < n; l++) { let x = 30 * k; const y = y0 + l * 22 * k, end = (560 - r() * 200) * k; while (x < end) { const gw = (4 + Math.floor(r() * 8)) * k; if (r() < 0.15) { x += 10 * k; continue; } box(o, W, H, Math.round(x), Math.round(y + Math.floor(r() * 3) * k), Math.round(gw), Math.round((12 - Math.floor(r() * 4)) * k), [40, 40, 40]); x += gw + 2 * k; } } };
+test('flat UI still (header band + text lines right below or further down, 1280×720) → no fx.vhs (review flatui_text_near_edge / far)', () => {
+  for (const gap of [4, 40]) {   // 리뷰 probe 와 같은 그림 (머리띠 60px, 글자 줄 22px 간격)
+    const fr = canvas(1280, 720, [255, 255, 255]); box(fr, 1280, 720, 0, 0, 1280, 60, [0x2d, 0x9c, 0xdb]); lines(fr, 1280, 720, 60 + gap, 10, 5, 1);
+    const f = raw(`flatui_${gap}.mp4`, 1280, 720, 12, 18, () => fr), P = probe(f), s = measureSeries(f, P);
+    assert.ok(!ids(buildCandidates(s, [], P.duration)).includes('fx.vhs'), `gap ${gap}: ` + JSON.stringify(s.slice(0, 3).map(e => e.band)));
+  }
+});
+test('yellow disk grows over a flat white screen with a few text lines in 0.4 s → trans.fill (review fill_ours); hard cut white → yellow → none', () => {
+  const W = 640, H = 360, Y = [0xf2, 0xc9, 0x4c];
+  const grow = raw('fill_ours.mp4', W, H, 24, 72, t => { const o = canvas(W, H, [255, 255, 255]); lines(o, W, H, 30, 4, 3); const rr = t < 1 ? 30 : t < 1.4 ? 30 + (t - 1) / 0.4 * 420 : 450; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((x - 320) ** 2 + (y - 180) ** 2 < rr * rr) o.set(Y, (y * W + x) * 3); return o; });
+  const P = probe(grow), c = buildCandidates(measureSeries(grow, P), [], P.duration).find(x => x.id === 'trans.fill');
+  assert.ok(c && c.t0 >= 0.8 && c.t1 <= 1.6, JSON.stringify(c));
+  const cut = raw('cut_wy.mp4', W, H, 24, 48, t => t < 1 ? canvas(W, H, [255, 255, 255]) : canvas(W, H, Y)), Q = probe(cut);
+  assert.ok(!ids(buildCandidates(measureSeries(cut, Q), [], Q.duration)).includes('trans.fill'));   // 컷 검출 전이라도 한 프레임 만에 바뀐 색은 채움이 아니다
 });

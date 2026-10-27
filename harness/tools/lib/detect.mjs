@@ -106,12 +106,15 @@ export function fillRatio(rgb, w, h) {
   return { ratio: c / n, hex: toHex([r / c, gg / c, b / c]) };
 }
 
-// 행 y 와 y+1 의 ±8px 가로 이동 중 평균 절대차 최소인 이동량 |s| (동률이면 작은 |s|). 텍스처 없는 쌍(최대−최소 차 < 1)은 null
+// 행 y 와 y+1 의 ±8px 가로 이동 중 평균 절대차 최소인 이동량 |s| (동률이면 작은 |s|). 모든 이동을 같은 겹침 [8, w−8) 로 비교한다
+// (겹침이 이동마다 다르면 끝 열 몇 개로 엉뚱한 |s| 가 이긴다). 두 행 모두 텍스처가 있어야 한다(가로 기울기 평균 ≥ ROWTEX) — 한쪽이 평평하면 null
+const ROWTEX = 1;
+function rowTex(g, w, y, a, b) { let s = 0; for (let x = a + 1; x < b; x++) { const e = g[y * w + x] - g[y * w + x - 1]; s += e < 0 ? -e : e; } return s / Math.max(1, b - a - 1); }
 function rowShift(g, w, y) {
-  const R = 8, r0 = y * w, r1 = r0 + w; let best = Infinity, bs = 0, worst = -Infinity;
+  const R = 8, r0 = y * w, r1 = r0 + w, xa = R, xb = w - R; let best = Infinity, bs = 0, worst = -Infinity;
+  if (xb - xa < 2 || rowTex(g, w, y, xa, xb) < ROWTEX || rowTex(g, w, y + 1, xa - R, xb + R) < ROWTEX) return null;
   for (let k = 0; k <= 2 * R; k++) {
-    const s = k & 1 ? (k + 1) >> 1 : -(k >> 1), xa = Math.max(0, -s), xb = Math.min(w, w - s);
-    if (xb - xa < 1) continue;
+    const s = k & 1 ? (k + 1) >> 1 : -(k >> 1);
     let d = 0; for (let x = xa; x < xb; x++) { const e = g[r0 + x] - g[r1 + x + s]; d += e < 0 ? -e : e; }
     d /= xb - xa;
     if (d < best) { best = d; bs = s; }

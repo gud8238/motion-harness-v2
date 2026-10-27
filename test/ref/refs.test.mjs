@@ -31,7 +31,7 @@ const hasCut = (cuts, t, tol = 0.1) => cuts.some(c => Math.abs(c - t) <= tol);
 
 test('reference B: hard cuts between flat screens; push, fill, morph, shared, dof', { skip: skipFor('MH2_REF_B') }, () => {
   const { cs, cuts } = analyze(process.env.MH2_REF_B, 'b');
-  for (const t of [7.33, 7.98, 12.93, 13.32, 22.4, 26.93, 28.68]) assert.ok(hasCut(cuts, t), `컷 ${t}s 없음: ${cuts.join(', ')}`);   // ffmpeg scene 0.3 은 0개 (R7)
+  for (const t of [7.33, 7.98, 12.93, 13.32, 22.4, 25.02, 25.2, 26.93, 28.68]) assert.ok(hasCut(cuts, t), `컷 ${t}s 없음: ${cuts.join(', ')}`);   // ffmpeg scene 0.3 은 0개 (R7); 25.02·25.2 = 검은 띠가 닫혔다 열림
   assert.ok(!cuts.some(c => c > 0.1 && c < 6.5), `첫 샷(0–6.7s 줌아웃 원테이크) 안의 컷: ${cuts.join(', ')}`);
   assert.ok(near(cs, 'cam.push', 0, 3, 0, 6.8), show(cs));          // 할 일 목록에서 글자 벽으로 줌아웃 0–3s
   assert.ok(near(cs, 'trans.fill', 6.58, 6.75, 6.3, 7.8), show(cs)); // 노란 덩어리가 화면을 채움 ~6.7s
@@ -43,7 +43,7 @@ test('reference B: hard cuts between flat screens; push, fill, morph, shared, do
 test('reference A: depth of field, VHS rewinds, long take between cuts', { skip: skipFor('MH2_REF_A') }, () => {
   const { cs, cuts } = analyze(process.env.MH2_REF_A, 'a');
   for (const t of [2.07, 16.98]) assert.ok(hasCut(cuts, t), `컷 ${t}s 없음: ${cuts.join(', ')}`);
-  assert.ok(!cuts.some(c => c > 2.3 && c < 11.5), `카메라가 계속 움직이는 2.1–11.6s 안의 컷: ${cuts.join(', ')}`);
+  assert.ok(!cuts.some(c => c > 2.2 && c < 16.8), `끊김 없는 카메라 2.1–16.9s 안의 컷 (깜빡임·빠른 이동·되감기 띠는 컷이 아니다): ${cuts.join(', ')}`);
   assert.ok(cs.some(c => c.id === 'lens.dof'), show(cs));
   assert.ok(near(cs, 'fx.vhs', 1.17, 2.25, 0, 3), show(cs));     // 일시정지·되감기 1.2–2.2s
   assert.ok(near(cs, 'fx.vhs', 11.67, 13.0, 10.5, 14), show(cs)); // 되감기 11.7–13.0s

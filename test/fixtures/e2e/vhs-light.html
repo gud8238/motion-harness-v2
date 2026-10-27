@@ -1,0 +1,19 @@
+<template>
+  <!-- e2e: fx.vhs 오버레이가 light 단색 바탕에서도 fx.vhs 로 감지되는가 (Task 17b) -->
+  <style>
+    @font-face { font-family: "Pretendard"; src: url("assets/fonts/PretendardVariable.woff2") format("woff2"); font-weight: 45 920; font-display: block; }
+    #vhs-light { position: absolute; inset: 0; background: #f4f1ea; font-family: "Pretendard", sans-serif; color: #1d1d1f; overflow: hidden; }
+    #vhs-light-t { position: absolute; left: 160px; top: 430px; font-size: 120px; font-weight: 800; }
+  </style>
+  <div id="vhs-light" data-composition-id="vhs-light" data-width="1920" data-height="1080">
+    <div id="vhs-light-t">되감기 테스트</div>
+  </div>
+  <script>
+    (function () {
+      const fx = MH.fx, tl = gsap.timeline({ paused: true });
+      const vhs = fx.vhs(document.getElementById('vhs-light'), { labels: [[0, '<< REWIND']], timecode: 'FRI 17:59', seed: 4, color: '#1d1d1f' });
+      MH.drive(tl, 3, t => vhs.render(t));
+      window.__timelines["vhs-light"] = tl;
+    })();
+  </script>
+</template>

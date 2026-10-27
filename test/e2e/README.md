@@ -1,11 +1,12 @@
 # e2e 스모크 테스트
 
-실제 HyperFrames 로 렌더해 확인한다 (약 1분). `npm test` 에서는 건너뛴다.
+실제 HyperFrames 로 렌더해 확인한다 (약 1분 반). `npm test` 에서는 건너뛴다.
 
 1. 무대 `st1`(픽스처 `test/fixtures/e2e/st1.html`)에 근거 없는 ② 효과 표 → `make.mjs --check` 가 게이트로 실패
 2. 효과 표를 ③ 사용자 지정 + brief "효과 지정" 으로 고침 → `make.mjs --draft` 성공
 3. `hyperframes snapshot` 을 시각 순서만 바꿔 두 번 → 같은 시각 PNG 바이트가 같음
 4. v1 프로젝트(`test/fixtures/e2e/v1-project/`, 효과 표 없음·dom 장면 3개) → `new.mjs` 로 라이브러리 갱신 후 게이트 통과·`make.mjs --draft` 성공
+5. (`vhs.test.mjs`) `fx.vhs` 오버레이를 밝은 단색(`vhs-light`)·어두운 단색(`vhs-dark`) 장면에 걸어 렌더 → 렌더 영상에서 두 장면 모두 `fx.vhs` 후보가 나온다 (감지기와 런타임 트래킹 띠가 맞는지)
 
 프로젝트는 임시 폴더의 `모션 테스트 1/` (한글·공백 경로)에 만든다.
 

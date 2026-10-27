@@ -118,3 +118,12 @@ test('profileScale: flat frames → scale 1, corr 0', () => {
   const z = radialProfile(new Uint8Array(w * h).fill(120), w, h);
   assert.deepEqual(profileScale(z, z), { scale: 1, corr: 0 });
 });
+
+// 평평한 UI: 단색 머리띠 바로 아래 글자 줄 — 한쪽 행이 평평하면 어긋남을 말할 수 없다 (리뷰 flatui_text_near_edge)
+test('trackingBand/rowJitter: flat header edge right above text rows → no row shift', () => {
+  const f = new Uint8Array(w * h).fill(235), R = (s => () => (s = (s * 16807) % 2147483647) / 2147483647)(7);
+  for (let y = 0; y < 12; y++) for (let x = 0; x < w; x++) f[y * w + x] = 120;
+  for (let y = 13; y < h; y += 3) { let x = 4; while (x < w - 30) { const gw = 1 + Math.floor(R() * 2); if (R() > 0.2) for (let k = 0; k < gw; k++) f[y * w + x + k] = f[(y + 1) * w + x + k] = 40; x += gw + 1; } }
+  const b = trackingBand(f, w, h); assert.ok(b.cover >= 0.95 && !(b.jitter >= 0.4), JSON.stringify(b));
+  assert.ok(rowJitter(f, w, h) < 0.4, String(rowJitter(f, w, h)));
+});

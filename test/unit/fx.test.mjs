@@ -81,8 +81,24 @@ test('vhs: 트래킹 띠 y 는 1/12 초 단계 안에서 같고 단계마다 달
   assert.equal(y(1.0), y(1.0 + 1 / 12 - 0.001)); assert.equal(y(2.5), y(2.5 + 0.05));
   const set = new Set(); for (let s = 0; s < 24; s++) set.add(y(s / 12 + 0.01));
   assert.ok(set.size >= 20, `단계마다 달라야 함: ${set.size}`);
-  for (const s of set) { const p = parseFloat(s); assert.ok(p >= 0 && p <= 94, s); }
-  assert.match(band.style.height, /^6%$/);
+  for (const s of set) { const p = parseFloat(s); assert.ok(p >= 0 && p <= 90, s); }
+  assert.match(band.style.height, /^10%$/);
+});
+test('vhs: 트래킹 띠 = 밝은 윗줄 + 어두운 몸통(어떤 바탕에서도 화면 폭 경계) + 줄무늬 조각들이 단계마다 서로 다르게 가로로 어긋남 (fx.vhs 감지와 맞춤)', () => {
+  const { v, root } = build({ seed: 3 }, { clientWidth: 1920, clientHeight: 1080 });
+  const { band } = parts(root);
+  assert.match(band.style.background, /linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255/);
+  assert.match(band.style.background, /rgba\(0,\s*0,\s*0,\s*\.5/);
+  assert.match(band.id, /^mh-vhs-/);   // make.mjs 가 이 띠가 덮은 글자(text_occluded)를 의도된 가림으로 본다
+  const strips = [...band.children]; assert.ok(strips.length >= 3, `${strips.length}`);
+  for (const st of strips) assert.match(st.style.background, /repeating-linear-gradient\(90deg/);
+  const n = root.children.length;
+  const offs = t => { v.render(t); return strips.map(st => parseFloat(/translateX\((-?[\d.]+)px\)/.exec(st.style.transform)[1])); };
+  const a = offs(1.01), b = offs(1.01 + 1 / 12);
+  assert.ok(new Set(a).size >= 3 && JSON.stringify(a) !== JSON.stringify(b), JSON.stringify([a, b]));
+  assert.deepEqual(offs(1.01), offs(1.04));                       // 같은 단계 안에서는 고정
+  for (const o of [...a, ...b]) assert.ok(Math.abs(o) <= 1920 / 160 * 6 + 1e-9, `${o}`);   // 분석 160폭 기준 ±6px 안
+  assert.equal(root.children.length, n); assert.equal(band.children.length, strips.length);
 });
 test('vhs: 같은 seed 면 같은 y, 다른 seed 면 다른 y', () => {
   const a = build({ seed: 1 }), b = build({ seed: 1 }), c = build({ seed: 2 });
@@ -159,7 +175,8 @@ test('vhs: 크기가 없는 el 은 MH.screenSize() 로 대신한다 (#root 1080x
   const W = loadRuntime(RT, { document: doc }); W.MH.fx.vhs(el, {});
   assert.equal(el.children[0].children[2].style.fontSize, '49px');
 });
-test('vhs: 트래킹 띠는 양쪽으로 12px 넘쳐 가장자리 틈이 없다', () => {
-  const { band } = parts(build({}).root);
-  assert.equal(band.style.left, '-12px'); assert.equal(band.style.width, 'calc(100% + 24px)');
+test('vhs: 트래킹 띠는 화면 폭 전체, 줄무늬 조각은 최대 어긋남(6u)보다 넓게(8u) 양쪽으로 넘쳐 가장자리 틈이 없다', () => {
+  const { band } = parts(build({}, { clientWidth: 1600 }).root);
+  assert.equal(band.style.left, '0'); assert.equal(band.style.right, '0');
+  for (const st of band.children) { assert.equal(st.style.left, '-80px'); assert.equal(st.style.right, '-80px'); }   // u = 1600/160 = 10px
 });
