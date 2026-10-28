@@ -112,7 +112,7 @@ harness/
 |---|---|---|---|
 | move · follow · spring · phys | ① | (mh.js) | — (강도만 DNA.motion) |
 | rig.actor (기본 연기·생명감, 늘어남 최대치는 DNA.motion.squash) | ① | rig2d | — |
-| cam.pan · cam.push · cam.rotate | ② | camera2d | globalMotion |
+| cam.pan · cam.push · cam.rotate | ② | camera2d | globalMotion (cam.push 는 + radialProfile) |
 | cam.shake | ② | camera2d | globalMotion 고주파 |
 | cam.parallax | ② | camera2d | residualDepth |
 | cam.onetake | ② | stage | 긴 무컷 구간 + globalMotion |
@@ -120,7 +120,7 @@ harness/
 | lens.rack | ② | lens2d | sharpnessShift |
 | lens.smear | ② | lens2d | directionalBlur (요소 단위) |
 | lens.mblur | ② | lens2d | directionalBlur (전체) |
-| fx.vhs · fx.glitch | ② | fx2d | rowJitter |
+| fx.vhs · fx.glitch | ② | fx2d | trackingBand · rowJitter |
 | time.remap | ② | fx2d | Claude 확인 |
 | morph.shape · morph.text | ② | morph | blobContour |
 | trans.fill | ② | transitions | compositeFill |
@@ -166,7 +166,9 @@ DNA 5번(모션) 행에는 ① 기본기 강도를 숫자로 적는다: `ant`(�
 | scaleSpike · blurSpike | 컷 전후 구간의 확대·번짐 급증 | 줌 스루·휩팬 후보 |
 | blobAcrossCut | 강조색 덩어리 추적, 컷 전후 모양·색 유사도 | 매치컷·공유 요소 후보 |
 | blobContour | 컷 없이 같은 색 덩어리의 윤곽이 크게 변함 | 모핑 후보 |
-| rowJitter | 행 단위 가로 어긋남·주사선 주기성 | VHS·글리치 후보 |
+| rowJitter | 행 단위 가로 어긋남·주사선 주기성 | 글리치 후보 |
+| trackingBand | 화면 폭을 가로지르는 경계 + 그 근처 행 어긋남, 프레임마다 옮겨 감 (Task 17b) | VHS 후보 |
+| radialProfile | 반지름 스펙트럼 크기비 — 블록 매칭이 못 따라가는 빠른 확대·축소 (Task 17b) | 줌 누적 |
 
 추가로 움직임 피크 구간의 곡선에서 ① 기본기 강도(동작 길이, 오버슈트 유무와 크기, 정지 시간)를 추정해 `analysis.md` 에 적는다.
 

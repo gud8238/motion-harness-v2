@@ -1,0 +1,43 @@
+<template>
+  <!-- 무대 장면(원테이크): 큰 월드 + 카메라 + 세트 + 배우 + 비트. 연출은 아래 큐시트 한 덩어리 (modules/stage.md) -->
+  <style>
+    @font-face { font-family: "Pretendard"; src: url("assets/fonts/PretendardVariable.woff2") format("woff2"); font-weight: 45 920; font-display: block; }
+    #__ID__ { position: absolute; inset: 0; overflow: hidden; background: var(--bg); font-family: "Pretendard", sans-serif; color: var(--ink); }
+    /* 세트의 transform 은 무대가 쓴다(등장·퇴장) → 세트 안 움직임은 안쪽 자식에 */
+    #__ID__-card { width: 640px; padding: 48px 56px; border-radius: 32px; background: var(--paper); font-size: 64px; font-weight: 800; box-shadow: 0 12px 40px rgba(0, 0, 0, .08); }
+  </style>
+  <div id="__ID__" data-composition-id="__ID__" data-width="__W__" data-height="__H__">
+    <div id="__ID__-card">할 일 목록</div>
+  </div>
+  <!-- 비트 = PLAN 장면 표의 한 행 = 스토리보드 한 칸 (board.mjs 가 읽는다). 비트를 나누면 t0·t1 을 고친다 -->
+  <script type="application/json" id="__ID__-beats">[{"id":"b1","t0":0,"t1":__DUR__,"title":"","note":""}]</script>
+  <script>
+    (function () {
+      const DUR = __DUR__, W = __W__, H = __H__;
+      const st = MH.stage2d(document.getElementById("__ID__"), { W, H, dur: DUR }).beatsFrom("#__ID__-beats");
+      // 세트: 월드 좌표(px)에 둔다. 첫 큐가 'in' 이면 그때까지 숨김. 깊이: 1 미만 = 월드 뒤, 1 초과 = 월드 앞(배우 아래), 0 = 화면 고정 맨 위(HUD)
+      st.set("card", document.getElementById("__ID__-card"), { at: [W / 2 - 320, H / 2 - 220] });
+      // 큐시트 [t, 대상, 동작, 옵션] — 대상: "cam" | "set:<이름>" | 배우 이름
+      const CUES = [
+        [0, "cam", { zoom: 1.25 }],
+        [0, "cam", { zoom: 1, dur: 2.5 }],
+        [0.3, "set:card", "in", { from: "below" }],
+        [0.8, "main", "enter", { from: "below", at: [W / 2, H / 2 + 200] }],
+        [1.8, "main", "blink"],
+        [2.4, "main", "face", "happy"],
+      ];
+      // 배우 디자인 = scene/assets/actors/main.json (scene.mjs 가 이 기본 코드 캐릭터로 만들어 둔다 — 바꾸려면 그 파일을 고친다). 파일을 못 읽으면 이 디자인
+      const FALLBACK = { body: { shape: "blob", w: 220, h: 180, color: "#F2C94C" }, eyes: { shape: "oval" }, mouth: { shape: "smile" } };
+      st.actorTarget("main");   // 배우 자리를 먼저 잡는다 (배우는 불러온 뒤 등록) → 큐는 바로 넣어도 경고 없음
+      st.cues(CUES);
+      const tl = gsap.timeline({ paused: true });
+      window.__hf = window.__hf || {}; window.__hf.buildReady = window.__hf.buildReady || {};
+      const useFallback = e => { console.warn((e && e.message || e) + " — 기본 디자인으로 그립니다."); st.actor("main", FALLBACK); };
+      window.__hf.buildReady["__ID__-actor"] = MH.rig.load("main")
+        .then(design => { try { st.actor("main", design); } catch (e) { useFallback(e); } }, useFallback)
+        .then(() => st.render(tl.time()));
+      MH.drive(tl, DUR, t => st.render(t));
+      window.__timelines["__ID__"] = tl;
+    })();
+  </script>
+</template>

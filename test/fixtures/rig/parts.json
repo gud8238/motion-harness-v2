@@ -1,0 +1,19 @@
+{
+  "kind": "parts",
+  "size": [400, 320],
+  "parts": [
+    { "name": "body", "src": "assets/actors/hero/body.png", "size": [400, 320], "pivot": [200, 160], "parent": null, "at": [0, 0], "z": 10 },
+    { "name": "limb0", "src": "assets/actors/hero/arm.png", "size": [60, 140], "pivot": [30, 10], "parent": "body", "at": [-190, 20], "z": 5 },
+    { "name": "limb1", "src": "assets/actors/hero/arm.png", "size": [60, 140], "pivot": [30, 10], "parent": "body", "at": [190, 20], "z": 5 },
+    { "name": "eyes_open", "src": "assets/actors/hero/eyes_open.png", "size": [160, 60], "pivot": [80, 30], "parent": "body", "at": [0, -40], "z": 20 },
+    { "name": "eyes_closed", "src": "assets/actors/hero/eyes_closed.png", "size": [160, 60], "pivot": [80, 30], "parent": "body", "at": [0, -40], "z": 20 },
+    { "name": "mouth_smile", "src": "assets/actors/hero/mouth_smile.png", "size": [90, 50], "pivot": [45, 25], "parent": "body", "at": [0, 50], "z": 20 },
+    { "name": "mouth_open", "src": "assets/actors/hero/mouth_open.png", "size": [90, 70], "pivot": [45, 35], "parent": "body", "at": [0, 55], "z": 20 }
+  ],
+  "faces": {
+    "idle": { "eyes": "eyes_open", "mouth": "mouth_smile" },
+    "happy": { "eyes": "eyes_closed", "mouth": "mouth_open" }
+  },
+  "eyesClosed": "eyes_closed",
+  "talkMouth": "mouth_open"
+}

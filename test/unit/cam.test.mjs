@@ -1,0 +1,225 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { loadRuntime } from '../helpers/runtime.mjs';
+
+const RT = ['harness/runtime/mh.js', 'harness/runtime/mh-cam.js'];
+const MH = loadRuntime(RT).MH;
+const A = v => Array.from(v);
+const near = (a, b, e = 1e-6) => assert.ok(Math.abs(a - b) <= e, `${a} ≠ ${b}`);
+
+// ── 브리프 테스트 ──
+test('keys interpolate and cut', () => {
+  const c = MH.cam(null, { W: 1920, H: 1080 }).key(0, { x: 0, zoom: 3 }).key(0, { zoom: 1 }, { dur: 3.5 }).key(5, { x: 800 });
+  assert.equal(c.state(0).zoom, 3); assert.equal(c.state(3.6).zoom, 1);
+  assert.equal(c.state(4.99).x, 0); assert.equal(c.state(5).x, 800);
+});
+test('toScreen centers camera target, portrait aware', () => {
+  const c = MH.cam(null, { W: 1080, H: 1920 }).key(0, { x: 100, y: 200, zoom: 2 });
+  assert.deepEqual(A(c.toScreen(0, [100, 200])).map(Math.round), [540, 960]);
+  assert.deepEqual(A(c.toScreen(0, [110, 200])).map(Math.round), [560, 960]);
+});
+test('depth 0 ignores camera', () => assert.deepEqual(A(MH.cam(null, { W: 100, H: 100 }).key(0, { x: 50, zoom: 2 }).matrix(0, 0)), [1, 0, 0, 1, 0, 0]));
+test('shake deterministic and bounded', () => {
+  const c = MH.cam(null, { W: 1000, H: 1000 }).shake(0, 1, 0.01, 8);
+  const xs = Array.from({ length: 30 }, (_, i) => c.state(i / 30).x - 500);   // 기본 x = W/2
+  assert.ok(xs.every(x => Math.abs(x) <= 10.0001) && xs.some(x => x !== 0));
+  assert.deepEqual(xs, Array.from({ length: 30 }, (_, i) => MH.cam(null, { W: 1000, H: 1000 }).shake(0, 1, 0.01, 8).state(i / 30).x - 500));
+});
+test('zoomThrough fills screen with rect', () => {
+  const c = MH.cam(null, { W: 1920, H: 1080 }); MH.trans2d.zoomThrough(c, [900, 500, 120, 80], { t0: 1 });
+  const s = c.state(2); assert.ok(Math.abs(s.x - 960) < 1 && s.zoom >= 1920 / 120 - 0.01);
+});
+test('module docs size', () => { for (const f of ['camera2d', 'transitions']) assert.ok(fs.statSync(`harness/modules/${f}.md`).size <= 3072); });
+
+// ── 추가 ──
+test('default state is identity', () => {
+  const c = MH.cam(null, { W: 1920, H: 1080 });
+  assert.deepEqual({ ...c.state(3) }, { x: 960, y: 540, zoom: 1, rot: 0 });
+  assert.deepEqual(A(c.matrix(3)), [1, 0, 0, 1, 0, 0]);
+});
+test('key with only zoom keeps x; later keys continue from earlier values', () => {
+  const c = MH.cam(null, { W: 1000, H: 1000 }).key(0, { x: 300 }).key(2, { zoom: 2 }, { dur: 1 });
+  assert.equal(c.state(2.5).x, 300); near(c.state(3).zoom, 2); assert.equal(c.state(1).zoom, 1);
+  const d = MH.cam(null, { W: 1000, H: 1000 }).key(0, { x: 0 }).key(1, { x: 100 }, { dur: 2 }).key(2, { x: 0 }, { dur: 1 });   // 이동 도중 새 키: 그 순간 값에서 출발
+  const mid = d.state(2).x; assert.ok(mid > 0 && mid < 100); near(d.state(3).x, 0); assert.ok(d.state(2.5).x < mid);
+});
+test('ease: function, MH.E key, dna', () => {
+  const lin = MH.cam(null, { W: 100, H: 100 }).key(0, { x: 0 }).key(0, { x: 100 }, { dur: 1, ease: 'linear' });
+  near(lin.state(0.25).x, 25);
+  const fn = MH.cam(null, { W: 100, H: 100 }).key(0, { x: 0 }).key(0, { x: 100 }, { dur: 1, ease: t => t * t });
+  near(fn.state(0.5).x, 25);
+  const dna = MH.cam(null, { W: 100, H: 100 }).key(0, { x: 0 }).key(0, { x: 100 }, { dur: 1 });
+  near(dna.state(0.5).x, 50, 1e-6);   // DNA 없음 → E.inOut(0.5)=0.5
+  const W = loadRuntime(RT); W.DNA = { easeFn: () => 1 };
+  const d2 = W.MH.cam(null, { W: 100, H: 100 }).key(0, { x: 0 }).key(0, { x: 100 }, { dur: 1 });
+  near(d2.state(0.1).x, 100);   // DNA.easeFn 사용
+});
+test('depth 0.5 parallax is half the full-depth shift', () => {
+  const c = MH.cam(null, { W: 1000, H: 1000 }).key(0, { x: 500 }).key(0, { x: 700 }, { dur: 1, ease: 'linear' });
+  const full = c.matrix(1, 1), half = c.matrix(1, 0.5);
+  near(full[4], -200); near(half[4], -100); near(half[0], 1);
+  near(c.toScreen(1, [500, 500], 0.5)[0], 400); near(c.toScreen(1, [500, 500], 1)[0], 300); near(c.toScreen(1, [500, 500], 0)[0], 500);
+});
+test('zoom scale per depth is 1 + (zoom-1)·d', () => {
+  const c = MH.cam(null, { W: 1000, H: 1000 }).key(0, { zoom: 3 });
+  near(c.matrix(0, 1)[0], 3); near(c.matrix(0, 0.5)[0], 2); near(c.matrix(0, 0)[0], 1); near(c.matrix(0, 2)[0], 5);
+});
+test('rot maps with depth and toScreen/toWorld invert', () => {
+  const c = MH.cam(null, { W: 1000, H: 1000 }).key(0, { rot: 90 });
+  const m = c.matrix(0, 1);   // 90°: (1000,500) 은 화면 중심 오른쪽 500 → 중심 아래 500
+  near(m[0], 0); near(m[1], 1); near(m[2], -1); near(m[3], 0);
+  const p = c.toScreen(0, [1000, 500]); near(p[0], 500); near(p[1], 1000);
+  near(c.matrix(0, 0.5)[1], Math.sin(Math.PI / 4));
+  const k = MH.cam(null, { W: 1000, H: 800 }).key(0, { x: 120, y: 340, zoom: 1.7, rot: 23 });
+  const w = k.toWorld(0, k.toScreen(0, [333, 77])); near(w[0], 333, 1e-6); near(w[1], 77, 1e-6);
+});
+test('shake fades in and out (no pop) and is silent outside', () => {
+  const c = MH.cam(null, { W: 1000, H: 1000 }).shake(1, 2, 0.02, 10);
+  const o = t => Math.hypot(c.state(t).x - 500, c.state(t).y - 500);
+  assert.equal(o(0.99), 0); assert.equal(o(2.01), 0);
+  assert.ok(o(1) < 0.01 && o(2) < 0.01 && o(1.001) < 0.5);
+  assert.ok(Array.from({ length: 40 }, (_, i) => o(1.3 + i * 0.015)).some(v => v > 2));
+});
+test('layers register and render sets matrix transform', () => {
+  const el = { style: {} }, a = { style: {} }, b = { style: {} };
+  const c = MH.cam(el, { W: 1000, H: 1000 }).layer(a, 0).layer(b, 0.5).key(0, { x: 600 });
+  assert.deepEqual(A(c.layers).map(l => l.depth), [1, 0, 0.5]); assert.equal(c.layers[0].el, el);
+  c.render(0);
+  assert.equal(el.style.transform, 'matrix(1,0,0,1,-100,0)'); assert.equal(el.style.transformOrigin, '0 0');
+  assert.equal(a.style.transform, 'matrix(1,0,0,1,0,0)'); assert.equal(b.style.transform, 'matrix(1,0,0,1,-50,0)');
+});
+test('whip: direction, velocity mid-whip, ~0 after', () => {
+  const c = MH.cam(null, { W: 1000, H: 500 }).key(0, { x: 500 });
+  const w = MH.trans2d.whip(c, { t0: 1, dir: 'left', dur: 0.4, dist: 1.2 });
+  near(c.state(1.4).x, 500 - 1200); assert.equal(c.state(0.9).x, 500);
+  const v = w.vel(1.2); assert.ok(Math.abs(v[0]) > 1000 && v[0] > 0 && Math.abs(v[1]) < 1e-6);   // 카메라 왼쪽 → 내용은 오른쪽으로 흐름
+  assert.ok(Math.abs(w.vel(2)[0]) < 1e-6 && Math.abs(w.vel(0.5)[0]) < 1e-6);
+  const u = MH.cam(null, { W: 1000, H: 500 }); MH.trans2d.whip(u, { t0: 0, dir: 'down' });
+  near(u.state(1).y, 250 + 1.2 * 500); near(u.state(1).x, 500);
+});
+test('match maps rectB corners onto rectA (top-left origin)', () => {
+  const A_ = [100, 50, 400, 200], B_ = [700, 300, 100, 50];
+  const m = /^translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\((-?[\d.]+)\)$/.exec(MH.trans2d.match(A_, B_));
+  assert.ok(m, MH.trans2d.match(A_, B_));
+  const [dx, dy, s] = m.slice(1).map(Number);
+  near(s, 4);
+  const map = ([px, py]) => [B_[0] + dx + s * (px - B_[0]), B_[1] + dy + s * (py - B_[1])];   // origin = B 의 왼쪽 위
+  const tl = map([700, 300]), br = map([800, 350]);
+  near(tl[0], 100); near(tl[1], 50); near(br[0], 500); near(br[1], 250);
+  assert.deepEqual(A(map([750, 325])), [300, 150]);
+});
+test('fill: overlay created once, progress and clip-path', () => {
+  let made = 0;
+  const W = loadRuntime(RT, { document: { createElement: () => { made++; return { style: {} }; } } });
+  const kids = [];
+  const parent = { appendChild: n => kids.push(n), getBoundingClientRect: () => ({ left: 0, top: 0, width: 1920, height: 1080 }) };
+  const el = { parentNode: parent, getBoundingClientRect: () => ({ left: 900, top: 500, width: 120, height: 80 }) };
+  const f = t => W.MH.trans2d.fill(t, el, { t0: 1, dur: 1, color: '#E8442E' });
+  assert.equal(f(0), 0); assert.equal(made, 1); assert.equal(kids.length, 1);
+  const ov = kids[0]; assert.equal(ov.style.display, 'none'); assert.equal(ov.style.background, '#E8442E'); assert.equal(ov.style.zIndex, '9999');
+  assert.equal(ov.style.pointerEvents, 'none'); assert.equal(ov.style.position, 'absolute');
+  near(f(1), 0); assert.notEqual(ov.style.display, 'none'); assert.match(ov.style.clipPath, /^circle\(40(\.0+)?px at 960(\.0+)?px 540(\.0+)?px\)$/);
+  near(f(1.5), 0.5); const r = parseFloat(/circle\(([\d.]+)px/.exec(ov.style.clipPath)[1]);
+  const rEnd = Math.hypot(960, 540); near(r, (40 + rEnd) / 2, 0.01);   // inOut(0.5)=0.5
+  near(f(2), 1); assert.equal(ov.style.clipPath, 'none');
+  assert.equal(f(3), 1); f(0.2); assert.equal(made, 1); assert.equal(ov.style.display, 'none');   // 되감기: 결정적
+  f(1.5); assert.ok(/circle/.test(ov.style.clipPath));
+});
+
+// ── 리뷰 1차 (R11) ──
+test('zoom interpolates in log space; zoom input clamped', () => {
+  const c = MH.cam(null, { W: 100, H: 100 }).key(0, { zoom: 1 }).key(0, { zoom: 4 }, { dur: 2, ease: 'linear' });
+  near(c.state(1).zoom, 2); near(c.state(0).zoom, 1, 0); near(c.state(2).zoom, 4, 0);
+  assert.equal(MH.cam(null, { W: 100, H: 100 }).key(0, { zoom: 0 }).state(0).zoom, 1e-3);
+  assert.equal(MH.cam(null, { W: 100, H: 100 }).key(0, { zoom: -5 }).state(1).zoom, 1e-3);
+});
+test('zoomThrough: rect center glides to screen center monotonically, no overshoot', () => {
+  const W = 1920, H = 1080, rect = [1500, 200, 120, 80], P = [1560, 240];
+  const c = MH.cam(null, { W, H }); MH.trans2d.zoomThrough(c, rect, { t0: 1, dur: 0.7 });
+  let prev = null;
+  for (let i = 0; i <= 70; i++) {
+    const t = 1 + i * 0.01, [sx, sy] = c.toScreen(t, P), dx = sx - W / 2, dy = sy - H / 2;
+    assert.ok(dx >= -1e-6 && dy <= 1e-6, `overshoot at ${t}: ${dx},${dy}`);   // 시작 오른쪽 위 → 중심
+    if (prev) assert.ok(dx <= prev[0] + 1e-6 && dy >= prev[1] - 1e-6, `non-monotone at ${t}`);
+    prev = [dx, dy];
+  }
+  near(prev[0], 0, 1e-6); near(prev[1], 0, 1e-6);
+  const s0 = c.toScreen(1, P); near(s0[0], c.toScreen(0, P)[0], 1e-6);   // 시작 위치에서 튀지 않음
+});
+test('fill: center option and cam+point are deterministic, no measuring', () => {
+  const made = []; let rects = 0;
+  const W = loadRuntime(RT, { document: { createElement: () => { const o = { style: {} }; made.push(o); return o; } } });
+  const root = { appendChild: n => root.kids.push(n), kids: [] }, parent = { appendChild() { throw new Error('root 에 붙어야 함'); } };
+  const el = { parentNode: parent, closest: s => (s === '[data-composition-id]' ? root : null), offsetWidth: 100, offsetHeight: 60, getBoundingClientRect: () => { rects++; return { left: 0, top: 0, width: 1, height: 1 }; } };
+  const T = W.MH.trans2d;
+  assert.equal(T.fill(1.5, el, { t0: 1, dur: 1, center: [100, 200] }), 0.5);
+  const ov = root.kids[0], r = parseFloat(/circle\(([\d.]+)px at 100(\.0+)?px 200(\.0+)?px\)/.exec(ov.style.clipPath)[1]);
+  near(r, (30 + Math.hypot(1820, 880)) / 2, 0.01);   // r0 = 짧은 변/2 = 30, 끝 = 가장 먼 모서리(1920×1080)
+  const cam = W.MH.cam(null, { W: 1000, H: 500 }).key(0, { x: 100, y: 100, zoom: 2 });
+  T.fill(1.5, el, { t0: 1, dur: 1, cam, point: [110, 100] });
+  assert.match(ov.style.clipPath, /at 520(\.0+)?px 250(\.0+)?px\)$/);
+  const r2 = parseFloat(/circle\(([\d.]+)px/.exec(ov.style.clipPath)[1]);
+  near(r2, (30 + Math.hypot(520, 250)) / 2, 0.01);   // 화면은 cam.W×H
+  assert.equal(rects, 0); assert.equal(made.length, 1);
+  assert.throws(() => T.fill(1.5, { getBoundingClientRect() {}, parentNode: null }, { t0: 1, center: [0, 0] }), /부모/);
+});
+test('fill measuring fallback converts through overlay scale', () => {
+  let ovEl; const W = loadRuntime(RT, { document: { createElement: () => (ovEl = { style: {}, offsetWidth: 1920, getBoundingClientRect: () => ({ left: 100, top: 50, width: 960, height: 540 }) }) } });
+  const root = { appendChild() {} }, el = { parentNode: root, getBoundingClientRect: () => ({ left: 100 + 480 - 25, top: 50 + 270 - 12.5, width: 50, height: 25 }) };   // 중심 = 오버레이 안 (480,270) → 스케일 0.5 → 로컬 (960,540)
+  W.MH.trans2d.fill(1.5, el, { t0: 1, dur: 1 });
+  assert.match(ovEl.style.clipPath, /at 960(\.0+)?px 540(\.0+)?px\)$/);
+  near(parseFloat(/circle\(([\d.]+)px/.exec(ovEl.style.clipPath)[1]), (25 + Math.hypot(960, 540)) / 2, 0.01);   // r0 = 12.5/0.5 = 25
+});
+test('screenSize resolves o → DNA → #root → 1920x1080; cam uses it', () => {
+  const root = { getAttribute: k => ({ 'data-width': '1080', 'data-height': '1920' })[k] };
+  const R = loadRuntime(RT, { document: { createElement: () => ({ style: {} }), getElementById: id => (id === 'root' ? root : null) } });
+  assert.deepEqual(A(R.MH.screenSize({})), [1080, 1920]);
+  assert.deepEqual(A(R.MH.screenSize({ W: 500 })), [500, 1920]);
+  const c = R.MH.cam(null);
+  assert.deepEqual([c.W, c.H], [1080, 1920]); assert.deepEqual({ ...c.state(0) }, { x: 540, y: 960, zoom: 1, rot: 0 });
+  R.DNA = { W: 720, H: 1280 }; assert.deepEqual(A(R.MH.screenSize({})), [720, 1280]);
+  assert.deepEqual(A(MH.screenSize({})), [1920, 1080]);
+});
+test('shake amplitude is in screen units regardless of zoom', () => {
+  const amp = 0.01, W = 1000;
+  for (const z of [0.5, 1, 4]) {
+    const c = MH.cam(null, { W, H: 1000 }).key(0, { zoom: z }).shake(0, 2, amp, 9);
+    const mx = Math.max(...Array.from({ length: 200 }, (_, i) => Math.abs(c.state(i / 100).x - 500) * z));
+    assert.ok(mx <= amp * W + 1e-9 && mx > 0.3 * amp * W, `z=${z} max=${mx}`);
+  }
+});
+test('unknown ease string throws listing valid keys', () => {
+  assert.throws(() => MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'bounce' }), /bounce.*dna.*linear.*inOut/s);
+  assert.throws(() => MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'bez' }));
+  MH.cam(null, { W: 100, H: 100 }).key(0, { x: 1 }, { dur: 1, ease: 'snap' });
+});
+
+// ── e2e 회귀 (Task 17a): 실제 HyperFrames check 에서 드러난 문제 ──
+test('fill overlay has a stable mh-fill id per host (make.mjs excuses text it covers)', () => {
+  const W = loadRuntime(RT, { document: { createElement: () => ({ style: {} }) } });
+  const root = { id: 'st1', kids: [], appendChild: n => root.kids.push(n) };
+  const mk = () => ({ parentNode: root, closest: () => root, offsetWidth: 10, offsetHeight: 10 });
+  const a = mk(), b = mk();
+  W.MH.trans2d.fill(0, a, { t0: 1, center: [0, 0] }); W.MH.trans2d.fill(0, b, { t0: 2, center: [0, 0] }); W.MH.trans2d.fill(0, a, { t0: 3, center: [0, 0] });
+  assert.deepEqual(root.kids.map(k => k.id), ['mh-fill-st1-1', 'mh-fill-st1-2', 'mh-fill-st1-3']);
+  W.MH.trans2d.fill(5, a, { t0: 1, center: [0, 0] }); assert.equal(root.kids.length, 3);   // 다시 불러도 같은 오버레이
+  const r2 = { kids: [], appendChild: n => r2.kids.push(n) }, r3 = { kids: [], appendChild: n => r3.kids.push(n) };   // id 없는 호스트 둘
+  W.MH.trans2d.fill(0, { parentNode: r2, closest: () => r2, offsetWidth: 10, offsetHeight: 10 }, { t0: 1, center: [0, 0] });
+  W.MH.trans2d.fill(0, { parentNode: r3, closest: () => r3, offsetWidth: 10, offsetHeight: 10 }, { t0: 1, center: [0, 0] });
+  assert.notEqual(r2.kids[0].id, r3.kids[0].id); assert.match(r2.kids[0].id, /^mh-fill-root-\d+$/);
+});
+test('camera layers (depth ≠ 0) are marked data-layout-allow-overflow; HUD (depth 0) is not', () => {
+  const mk = () => { const at = {}; return { style: {}, at, setAttribute: (k, v) => { at[k] = v; } }; };
+  const world = mk(), hud = mk(), far = mk(), bare = { style: {} };
+  MH.cam(world, { W: 100, H: 100 }).layer(hud, 0).layer(far, 0.4).layer(bare, 2);
+  assert.equal(world.at['data-layout-allow-overflow'], ''); assert.equal(far.at['data-layout-allow-overflow'], '');
+  assert.ok(!('data-layout-allow-overflow' in hud.at));
+});
+test('key with NaN / non-numeric zoom or position throws a Korean error instead of hiding the layer', () => {
+  const c = MH.cam(null, { W: 100, H: 100 });
+  assert.throws(() => c.key(0, { zoom: NaN }), /zoom 값이 숫자가 아닙니다/);
+  assert.throws(() => c.key(0, { x: 0 / 0 }), /x 값이 숫자가 아닙니다/);
+  assert.throws(() => c.key(0, { rot: 'abc' }), /rot/);
+  assert.doesNotThrow(() => c.key(0, { zoom: 0, x: 1 }));
+});

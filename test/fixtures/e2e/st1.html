@@ -1,0 +1,53 @@
+<template>
+  <!-- e2e 고정 픽스처: 무대 st1 (6초) — 코드 캐릭터 배우 1, cam.key 줌아웃, trans.fill 1회 -->
+  <style>
+    @font-face { font-family: "Pretendard"; src: url("assets/fonts/PretendardVariable.woff2") format("woff2"); font-weight: 45 920; font-display: block; }
+    #st1 { position: absolute; inset: 0; overflow: hidden; background: var(--bg); font-family: "Pretendard", sans-serif; color: var(--ink); }
+    #st1-card { width: 720px; padding: 40px 56px; border-radius: 32px; background: var(--paper); font-size: 72px; font-weight: 800; text-align: center; box-shadow: 0 12px 40px rgba(0, 0, 0, .08); }
+    #st1-grid { width: 1920px; height: 1080px; background-image: linear-gradient(var(--muted) 2px, transparent 2px), linear-gradient(90deg, var(--muted) 2px, transparent 2px); background-size: 120px 120px; opacity: .45; }
+    #st1-dot { width: 80px; height: 80px; border-radius: 50%; background: var(--accent); }
+  </style>
+  <div id="st1" data-composition-id="st1" data-width="1920" data-height="1080">
+    <div id="st1-grid"></div>
+    <div id="st1-card">모션 테스트</div>
+    <div id="st1-dot"></div>
+  </div>
+  <script type="application/json" id="st1-beats">[{"id":"b1","t0":0,"t1":4.4,"title":"줌아웃","note":"배우 등장"},{"id":"b2","t0":4.4,"t1":6,"title":"채움","note":"빨간 점이 화면을 채운다"}]</script>
+  <script>
+    (function () {
+      const DUR = 6, W = 1920, H = 1080;
+      const trans = MH.trans2d;
+      const st = MH.stage2d(document.getElementById("st1"), { W, H, dur: DUR }).beatsFrom("#st1-beats");
+      const cam = st.cam;
+      st.set("grid", document.getElementById("st1-grid"), { at: [0, 0], depth: 0.6 })
+        .set("card", document.getElementById("st1-card"), { at: [W / 2 - 360, 140] })
+        .set("dot", document.getElementById("st1-dot"), { at: [1460, 760] });
+      // 줌아웃: 배우 자리에 2.4배로 붙어 있다가 0.4초부터 2.4초 동안 전체로 물러난다
+      cam.key(0, { x: W / 2, y: H / 2 + 140, zoom: 2.4 })
+         .key(0.4, { y: H / 2, zoom: 1 }, { dur: 2.4 });
+      const DESIGN = { body: { shape: "blob", w: 240, h: 200, color: "#F2C94C" }, eyes: { shape: "oval" }, mouth: { shape: "smile" } };
+      st.actorTarget("main");
+      st.cues([
+        [0, "set:card", "in", { from: "below" }],
+        [0.2, "main", "enter", { from: "below", at: [W / 2, H / 2 + 160] }],
+        [1.6, "main", "blink"],
+        [2.2, "main", "face", "happy"],
+        [3.0, "set:dot", "in", { from: "scale" }],
+        [3.4, "main", "hop", { h: 80 }],
+      ]);
+      const tl = gsap.timeline({ paused: true });
+      window.__hf = window.__hf || {}; window.__hf.buildReady = window.__hf.buildReady || {};
+      const useFallback = e => { console.warn((e && e.message || e) + " — 기본 디자인으로 그립니다."); st.actor("main", DESIGN); };
+      window.__hf.buildReady["st1-actor"] = MH.rig.load("main")
+        .then(design => { try { st.actor("main", design); } catch (e) { useFallback(e); } }, useFallback)
+        .then(() => draw(tl.time()));
+      const dot = document.getElementById("st1-dot");
+      function draw(t) {
+        st.render(t);
+        trans.fill(t, dot, { t0: 4.4, dur: 1.0, color: DNA.accent, cam, point: [1500, 800] });
+      }
+      MH.drive(tl, DUR, draw);
+      window.__timelines["st1"] = tl;
+    })();
+  </script>
+</template>
