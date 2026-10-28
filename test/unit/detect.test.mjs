@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { globalMotion, sharpness, directionalBlur, fillRatio, rowJitter, trackingBand, radialProfile, profileScale, accentBlobs, sigSimilarity } from '../../harness/tools/lib/detect.mjs';
+import { globalMotion, sharpness, cellTone, directionalBlur, fillRatio, rowJitter, trackingBand, radialProfile, profileScale, accentBlobs, sigSimilarity } from '../../harness/tools/lib/detect.mjs';
 import { pattern, shift, zoom, rotate, blurRegion, hBlur, flood, jitterRows, disk, rect } from '../helpers/frames.mjs';
 
 const w = 160, h = 90, P = pattern(w, h, 1);
@@ -23,15 +23,34 @@ const near = (v, t, tol, msg) => assert.ok(Math.abs(v - t) < tol, `${msg}: ${v} 
 test('globalMotion: sub-pixel shift', () => { const m = globalMotion(P, shift(P, w, h, 2.3, 1.6), w, h); near(m.dx, 2.3, 0.3, 'dx'); near(m.dy, 1.6, 0.3, 'dy'); });
 test('globalMotion: identity result shape on static frames', () => {
   const m = globalMotion(P, P, w, h);
-  assert.deepEqual(Object.keys(m).sort(), ['dx', 'dy', 'n', 'parallax', 'res', 'rot', 'scale']); assert.equal(m.n, 48);
+  assert.deepEqual(Object.keys(m).sort(), ['dx', 'dy', 'n', 'parallax', 'res', 'rot', 'rotQ', 'scale']); assert.equal(m.n, 48);
   near(m.rot, 0, 0.05, 'rot'); near(m.res, 0, 0.05, 'res'); near(m.parallax, 0, 0.05, 'parallax');
 });
 test('globalMotion: flat frames → identity', () => {
   const z = new Uint8Array(w * h).fill(128);
   const m = globalMotion(z, z, w, h);
-  assert.deepEqual(m, { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0 }); assert.equal(m.n, 0);
+  assert.deepEqual(m, { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0, rotQ: null }); assert.equal(m.n, 0);
 });
 test('globalMotion: rotation sign is clockwise-positive (y down)', () => { const m = globalMotion(P, rotate(P, w, h, 2), w, h); near(m.rot, 2, 0.4, 'rot'); near(m.scale, 1, 0.02, 'scale'); });
+test('globalMotion: rotQ — a camera roll turns all four quadrants the same way; a spinning corner does not', () => {
+  const r = globalMotion(P, rotate(P, w, h, 2), w, h);
+  assert.equal(r.rotQ.length, 4); for (const q of r.rotQ) near(q, 2, 0.6, 'rotQ');
+  // 왼쪽 위 사분면 안의 내용만 돈다(휴대폰 화면 안 스크롤처럼 화면 일부의 움직임) → 나머지 사분면은 거의 0
+  const R = rotate(P, w, h, 8), b = Uint8Array.from(P); for (let y = 0; y < h / 2; y++) for (let x = 0; x < w / 2; x++) b[y * w + x] = R[y * w + x];
+  const m = globalMotion(P, b, w, h);
+  assert.ok(Math.min(...m.rotQ.map(Math.abs)) < 0.5, JSON.stringify(m.rotQ));
+});
+test('cellTone: per-cell intensity variance and block means (same grid as sharpness)', () => {
+  const f = new Uint8Array(w * h).fill(100); for (let y = 0; y < h; y++) for (let x = 0; x < w / 4; x++) f[y * w + x] = (x + y) % 2 ? 200 : 0;
+  const t = cellTone(f, w, h);
+  assert.equal(t.v.length, 12); assert.equal(t.m.length, 16 * 12); assert.deepEqual([t.gx, t.gy, t.sub], [4, 3, 4]);
+  near(t.v[0], 10000, 50, 'checker var'); near(t.v[1], 0, 1e-6, 'flat var');
+  near(t.m[0], 100, 3, 'checker block mean'); near(t.m[5], 100, 1e-6, 'flat block mean');
+  // 흐림: 라플라시안 분산은 크게, 밝기 분산은 덜 줄어든다(세부 비중 감소). 대비 감소: 둘이 같은 비율로 줄어든다
+  const blur = blurRegion(P, w, h, [0, 0, w, h], 2), fade = Uint8Array.from(P, v => 128 + (v - 128) * 0.4);
+  const share = g => sharpness(g, w, h)[5] / (cellTone(g, w, h).v[5] + 1), s0 = share(P);
+  assert.ok(share(blur) < 0.6 * s0, `흐림 ${share(blur)} / ${s0}`); assert.ok(share(fade) > 0.85 * s0, `대비 감소 ${share(fade)} / ${s0}`);
+});
 test('globalMotion: zoom keeps center fixed', () => { const m = globalMotion(P, zoom(P, w, h, 0.95), w, h); near(m.scale, 0.95, 0.02, 'scale'); near(m.dx, 0, 0.3, 'dx'); near(m.dy, 0, 0.3, 'dy'); });
 test('globalMotion: parallax when top half moves alone', () => {
   const S = shift(P, w, h, 4, 0), b = Uint8Array.from(P); b.set(S.subarray(0, w * h / 2));
@@ -45,7 +64,7 @@ test('globalMotion: portrait 9:16 frames', () => {
 });
 test('globalMotion: tiny frames do not throw', () => {
   const t = pattern(16, 9, 2);
-  assert.deepEqual(globalMotion(t, t, 16, 9), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0 });
+  assert.deepEqual(globalMotion(t, t, 16, 9), { dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0, rotQ: null });
 });
 test('globalMotion: < 5 ms per default-range call (median of 20)', () => {
   const b = zoom(P, w, h, 1.03), t = [];

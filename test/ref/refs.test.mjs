@@ -38,6 +38,9 @@ test('reference B: hard cuts between flat screens; push, fill, morph, shared, do
   assert.ok(near(cs, 'morph.shape', 34.0, 34.25, 33, 35.5), show(cs)); // 눈 → boon 로고 ~34.1s
   assert.ok(cs.some(c => c.id === 'trans.shared'), show(cs));          // 노란 덩어리가 여러 샷을 잇는다
   assert.ok(cs.some(c => c.id === 'lens.dof'), show(cs));              // 흐린 글자 배경
+  assert.ok(near(cs, 'lens.rack', 2.9, 3.5, 2.5, 4.2), show(cs));     // 글자 벽이 통째로 흐려짐(초점이 작은 캐릭터로) 2.9–3.5s
+  assert.ok(near(cs, 'lens.rack', 18.85, 19.1, 18.7, 19.4), show(cs)); // 쪽지 'Dan owes you' 흐려지고 'Mom loves tulips' 선명해짐
+  for (const id of ['cam.rotate', 'trans.whip']) assert.ok(!cs.some(c => c.id === id), `영상에 없는 ${id}: ${show(cs)}`);   // 휴대폰 안 스크롤·흐린 배경의 빛 / 눈 감기며 어두워짐
 });
 
 test('reference A: depth of field, VHS rewinds, long take between cuts', { skip: skipFor('MH2_REF_A') }, () => {
@@ -47,4 +50,7 @@ test('reference A: depth of field, VHS rewinds, long take between cuts', { skip:
   assert.ok(cs.some(c => c.id === 'lens.dof'), show(cs));
   assert.ok(near(cs, 'fx.vhs', 1.17, 2.25, 0, 3), show(cs));     // 일시정지·되감기 1.2–2.2s
   assert.ok(near(cs, 'fx.vhs', 11.67, 13.0, 10.5, 14), show(cs)); // 되감기 11.7–13.0s
+  assert.ok(near(cs, 'cam.rotate', 9.4, 10.4, 2.1, 16.9), show(cs));    // 카메라 롤 9.4–10.4s
+  assert.ok(near(cs, 'cam.rotate', 17.8, 18.4, 17, 19.05), show(cs));  // 기울어진 마지막 샷
+  for (const id of ['lens.rack', 'trans.whip']) assert.ok(!cs.some(c => c.id === id), `영상에 없는 ${id}: ${show(cs)}`);
 });

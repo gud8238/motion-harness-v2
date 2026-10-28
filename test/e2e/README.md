@@ -7,6 +7,7 @@
 3. `hyperframes snapshot` 을 시각 순서만 바꿔 두 번 → 같은 시각 PNG 바이트가 같음
 4. v1 프로젝트(`test/fixtures/e2e/v1-project/`, 효과 표 없음·dom 장면 3개) → `new.mjs` 로 라이브러리 갱신 후 게이트 통과·`make.mjs --draft` 성공
 5. (`vhs.test.mjs`) `fx.vhs` 오버레이를 밝은 단색(`vhs-light`)·어두운 단색(`vhs-dark`) 장면에 걸어 렌더 → 렌더 영상에서 두 장면 모두 `fx.vhs` 후보가 나온다 (감지기와 런타임 트래킹 띠가 맞는지)
+6. (`rack.test.mjs`) 먼 글자 벽(깊이 0.4)과 앞 카드(깊이 1.4)에 `lens.dof`(기본 aperture 6) + `lens.rack`(0.8–1.8s 초점 1.4 → 0.4)을 걸어 렌더(`rack`) → 렌더 영상에서 그 구간에만 두 방향(카드 흐려짐·벽 선명해짐) `lens.rack` 후보가 나온다
 
 프로젝트는 임시 폴더의 `모션 테스트 1/` (한글·공백 경로)에 만든다.
 

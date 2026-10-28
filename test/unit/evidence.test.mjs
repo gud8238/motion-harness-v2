@@ -47,6 +47,13 @@ test('pan → cam.pan, not cam.push', () => {
   assert.ok(ids(c).includes('cam.pan')); assert.ok(!ids(c).includes('cam.push'));
 });
 test('rotation → cam.rotate', () => assert.ok(ids(buildCandidates(S(24, () => gm({ rot: 0.5 })), [], 2, 160, 90)).includes('cam.rotate')));
+test('rotation must turn all four quadrants the same way (rotQ) — a sub-region turning (phone scroll, moving light) is not a camera roll', () => {
+  assert.ok(ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [0.5, 0.45, 0.55, 0.5] })), [], 2, 160, 90)).includes('cam.rotate'));
+  const c = buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [0.9, -0.6, 0.9, 0.8] })), [], 2, 160, 90);   // 레퍼런스 B 10.3–12.8s: 한 사분면이 반대로 돈다
+  assert.ok(!ids(c).includes('cam.rotate'), JSON.stringify(c));
+  assert.ok(!ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [1.2, 0.05, 0.05, 0.05] })), [], 2, 160, 90)).includes('cam.rotate'));   // 한 사분면만 돈다
+  assert.ok(!ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: null })), [], 2, 160, 90)).includes('cam.rotate'));   // 안쪽 블록이 모자라 사분면을 못 잼
+});
 test('shake → cam.shake', () => {
   const c = buildCandidates(S(24, i => gm({ dx: i % 2 ? 2 : -2, dy: i % 2 ? -1 : 1 })), [], 2, 160, 90);
   assert.ok(ids(c).includes('cam.shake'), JSON.stringify(c));
@@ -68,17 +75,36 @@ test('dof: sharp center, soft (but not flat) edges ≥1s → lens.dof', () => {
   const flat = Float32Array.from({ length: 12 }, (_, k) => k === 5 || k === 6 ? 300 : 0);   // 단색 바탕 위 가운데 글자 ≠ 심도
   assert.ok(!ids(buildCandidates(S(24, () => ({ sharp: flat })), [], 2, 160, 90)).includes('lens.dof'));
 });
-test('rack focus: sharpest cell jumps ≥2 cells → lens.rack', () => {
-  const at = k => Float32Array.from({ length: 12 }, (_, j) => j === k ? 300 : 20);
-  assert.ok(!ids(buildCandidates(S(24, i => ({ sharp: at(i < 12 ? 4 : 7) })), [], 2, 160, 90)).includes('lens.rack'));   // 한 프레임에 15배 뜀 = 컷처럼 바뀐 내용 (초점 이동은 여러 프레임에 걸친다)
-  assert.ok(!ids(buildCandidates(S(24, i => ({ ...gm({ dx: 3 }), sharp: at(i < 12 ? 4 : 7) })), [], 2, 160, 90)).includes('lens.rack'));   // 패닝 중 선명 칸 이동 ≠ 랙포커스
-  const appear = Float32Array.from({ length: 12 }, (_, j) => j === 4 ? 300 : j === 7 ? 3 : 20), shown = Float32Array.from({ length: 12 }, (_, j) => j === 7 ? 300 : 20);
-  assert.ok(!ids(buildCandidates(S(24, i => ({ sharp: i < 12 ? appear : shown })), [], 2, 160, 90)).includes('lens.rack'));   // 빈 칸에 글자가 나타남 ≠ 초점 이동
-  const pop = Float32Array.from({ length: 12 }, (_, j) => j === 4 ? 300 : j === 7 ? 25 : 20);
-  assert.ok(!ids(buildCandidates(S(24, i => ({ sharp: i < 12 ? pop : at(7) })), [], 2, 160, 90)).includes('lens.rack'));   // 한 프레임에 12배 → 내용이 튀어나옴
-  const pull = i => Float32Array.from({ length: 12 }, (_, j) => j === 4 ? 300 / 1.6 ** Math.max(0, i - 6) : j === 7 ? 300 / 1.6 ** Math.max(0, 14 - i) : 20);   // 0.7초에 걸쳐 초점이 옮겨 감
-  assert.ok(ids(buildCandidates(S(24, i => ({ sharp: pull(i) })), [], 2, 160, 90)).includes('lens.rack'));
-  assert.ok(!ids(buildCandidates(S(24, i => ({ ...gm({ scale: 1.05 }), sharp: pull(i) })), [], 2, 160, 90)).includes('lens.rack'));   // 확대 중 = 화면이 움직임
+// 초점 이동 시계열: sharp = 칸별 라플라시안 분산, tone.v = 칸별 밝기 분산(흐림이면 세부보다 덜 줄어든다), tone.m = 블록 평균(같은 내용이면 그대로)
+const SAME = new Float32Array(192).fill(128);
+const focus = (sh, v = sh.map(s => 40 * Math.sqrt(s)), m = SAME) => ({ sharp: Float32Array.from(sh), tone: { v: Float32Array.from(v), m, gx: 4, gy: 3, sub: 4 } });
+const ramp = (i, a = 6, b = 12) => Math.min(1, Math.max(0, (i - a) / (b - a)));   // 0.5초(6프레임)에 걸쳐 0 → 1
+test('rack focus: one region blurs while another sharpens, same content, camera still → lens.rack', () => {
+  const pull = i => focus(Array.from({ length: 12 }, (_, c) => c < 6 ? 2000 * 8 ** -ramp(i) : 250 * 8 ** ramp(i)));
+  const c = buildCandidates(S(24, pull), [], 2, 160, 90).find(x => x.id === 'lens.rack');
+  assert.ok(c && /→/.test(c.signal) && c.t0 >= 0.4 && c.t1 <= 1.1, JSON.stringify(c));
+});
+test('rack focus: a textured wall goes soft as a whole (focus moves to something too small to measure) → lens.rack (reference B 2.9–3.5s)', () => {
+  const soft = i => focus(Array.from({ length: 12 }, () => 2000 * 6 ** -ramp(i)));
+  const c = buildCandidates(S(24, soft), [], 2, 160, 90).find(x => x.id === 'lens.rack');
+  assert.ok(c && /흐려짐/.test(c.signal), JSON.stringify(c));
+});
+test('rack focus negatives: fade (contrast only), moving/changed content, one-frame jump, sparse dots, camera moving', () => {
+  const none = (f, msg) => { const c = buildCandidates(S(24, f), [], 2, 160, 90); assert.ok(!ids(c).includes('lens.rack'), msg + ': ' + JSON.stringify(c.filter(x => x.id === 'lens.rack'))); };
+  none(() => focus(Array(12).fill(2000)), '정지');
+  // 대비만 줄어든 사라짐: 라플라시안·밝기 분산이 같은 비율로 → 세부 비중 그대로
+  none(i => { const s = Array(12).fill(2000 * 8 ** -ramp(i)); return focus(s, s.map(v => v / 4)); }, '어두워짐·사라짐');
+  // 같은 세부 변화지만 블록 평균이 바뀜 = 내용이 움직이거나 바뀜
+  none(i => focus(Array.from({ length: 12 }, (_, c) => c < 6 ? 2000 * 8 ** -ramp(i) : 250 * 8 ** ramp(i)), undefined, new Float32Array(192).fill(128 + 20 * ramp(i))), '내용 변화');
+  // 한 프레임에 바뀜(컷처럼 바뀐 내용)
+  none(i => focus(Array.from({ length: 12 }, (_, c) => (c < 6) === (i < 12) ? 2000 : 250)), '한 프레임 변화');
+  // 성긴 점(별·입자)은 세부가 적어 초점을 말할 수 없다
+  none(i => focus(Array.from({ length: 12 }, (_, c) => c < 6 ? 300 * 8 ** -ramp(i) : 40 * 8 ** ramp(i))), '성긴 점');
+  // 오르내림(반짝임)은 한 방향 변화가 아니다
+  none(i => focus(Array.from({ length: 12 }, (_, c) => (c < 6 ? 2000 : 250) * (i % 2 ? 0.3 : 1))), '반짝임');
+  const pull = i => focus(Array.from({ length: 12 }, (_, c) => c < 6 ? 2000 * 8 ** -ramp(i) : 250 * 8 ** ramp(i)));
+  none(i => ({ ...gm({ dx: 3 }), ...pull(i) }), '패닝 중');
+  none(i => ({ ...gm({ scale: 1.05 }), ...pull(i) }), '확대 중');
 });
 test('motion blur on moving frames → lens.mblur', () => {
   const c = buildCandidates(S(36, i => ({ ...gm({ dx: i >= 12 && i < 24 ? 4 : 0 }), dblur: { ratio: i >= 12 && i < 24 ? 3 : 1 } })), [], 3, 160, 90);
@@ -128,15 +154,24 @@ test('zoom-through before a cut → trans.zoomThrough', () => {
   assert.ok(ids(c).includes('trans.zoomThrough'), JSON.stringify(c));
   const z = c.find(x => x.id === 'trans.zoomThrough'); assert.ok(z.t0 >= 0.4 && z.t1 <= 1.05);
 });
-test('whip: fast pan near a cut → trans.whip; same pan far from cuts does not', () => {
-  const series = S(36, i => gm({ dx: i >= 9 && i < 12 ? 9 : 0 }));
-  assert.ok(ids(buildCandidates(series, [1.0], 3, 160, 90)).includes('trans.whip'));
-  assert.ok(!ids(buildCandidates(series, [2.5], 3, 160, 90)).includes('trans.whip'));
+test('whip: fast pan out of the cut and in after it, same direction → trans.whip; one side only, opposite directions or far from cuts do not', () => {
+  const pan = (dxB, dxA) => S(36, i => gm({ dx: i >= 9 && i < 12 ? dxB : i >= 12 && i < 15 ? dxA : 0 }));
+  const c = buildCandidates(pan(9, 9), [1.0], 3, 160, 90).find(x => x.id === 'trans.whip');
+  assert.ok(c && /앞/.test(c.signal) && /뒤/.test(c.signal), JSON.stringify(c));
+  assert.ok(!ids(buildCandidates(pan(9, 9), [2.5], 3, 160, 90)).includes('trans.whip'));
+  assert.ok(!ids(buildCandidates(pan(9, 0), [1.0], 3, 160, 90)).includes('trans.whip'));    // 나가기만 빠르고 컷 뒤는 정지
+  assert.ok(!ids(buildCandidates(pan(9, -9), [1.0], 3, 160, 90)).includes('trans.whip'));   // 반대 방향
 });
-test('whip: block matching collapses while blur rises near cut → trans.whip', () => {
-  const c = buildCandidates(S(36, i => ({ ...gm(i === 11 ? { n: 0 } : {}), dblur: { ratio: i === 11 ? 2 : 1 } })), [1.0], 3, 160, 90);
-  assert.ok(ids(c).includes('trans.whip'), JSON.stringify(c));
-  const dip = buildCandidates(S(36, i => ({ ...gm(i === 11 ? { n: 0 } : {}), dblur: { ratio: i === 11 ? 2 : 1 }, fill: { ratio: i === 12 ? 1 : 0.1, hex: '#000000' } })), [1.0], 3, 160, 90);
+test('whip: block matching collapses while blur rises on both sides of the cut along the same axis → trans.whip', () => {
+  const whip = (aB, aA, nA = 0) => S(36, i => ({ ...gm(i === 11 ? { n: 0 } : i === 12 ? { n: nA } : {}), dblur: { ratio: i === 11 || i === 12 ? 2 : 1, angle: i === 11 ? aB : aA } }));
+  assert.ok(ids(buildCandidates(whip(0, 0), [1.0], 3, 160, 90)).includes('trans.whip'));
+  assert.ok(!ids(buildCandidates(whip(0, 90), [1.0], 3, 160, 90)).includes('trans.whip'));   // 흐림 축이 다름
+  // 이동 + 흐림: 앞은 빠른 가로 이동, 뒤는 가로 흐림
+  assert.ok(ids(buildCandidates(S(36, i => ({ ...gm(i >= 9 && i < 12 ? { dx: 9 } : i === 12 ? { n: 0 } : {}), dblur: { ratio: i === 12 ? 2 : 1, angle: 0 } })), [1.0], 3, 160, 90)).includes('trans.whip'));
+  // 레퍼런스 B 36.48s: 컷 뒤만 어두워지며 무늬가 사라짐(눈이 감김) — 앞쪽 근거 없음
+  const after = buildCandidates(S(36, i => ({ ...gm(i >= 12 && i < 16 ? { n: 0 } : {}), dblur: { ratio: i >= 12 && i < 16 ? 2.3 : 1, angle: 0 } })), [1.0], 3, 160, 90);
+  assert.ok(!ids(after).includes('trans.whip'), JSON.stringify(after));
+  const dip = buildCandidates(S(36, i => ({ ...gm(i === 11 || i === 12 ? { n: 0 } : {}), dblur: { ratio: i === 11 || i === 12 ? 2 : 1, angle: 0 }, fill: { ratio: i === 12 || i === 13 ? 1 : 0.1, hex: '#000000' } })), [1.0], 3, 160, 90);
   assert.ok(!ids(dip).includes('trans.whip'), JSON.stringify(dip));   // 검은 화면으로 넘어가는 프레임: 매칭할 무늬가 없을 뿐
 });
 const blob = (cx, cy, area, sig, hex = '#f2c94c', r = 8) => ({ hex, cx, cy, area, bbox: [cx - r, cy - r, cx + r, cy + r], sig });
@@ -311,4 +346,31 @@ test('staleStrips: drops vanished auto strips only; keeps manual, cited, and eve
   assert.deepEqual(staleStrips(files, cands, [], new Set(['ev_trans-fill_3.00.png'])), ['ev_fx-vhs_2.00.png']);
   assert.deepEqual(staleStrips(files, [], ['measureSeries']), []);
   assert.deepEqual(staleStrips(files, cands, ['rowJitter']), []);
+});
+
+// ---- 초점 이동 합성 영상: 화면 가득 글자 벽(640×360, 12fps) ----
+const wall = (W, H, seed) => { const o = new Float32Array(W * H).fill(235), r = rng(seed); for (let y = 6; y + 10 < H; y += 16) { let x = 4 + r() * 10; while (x < W - 8) { const gw = 3 + Math.floor(r() * 7); if (r() > 0.12) for (let yy = y; yy < y + 9; yy++) for (let xx = Math.round(x); xx < Math.min(W, x + gw); xx++) o[yy * W + xx] = 60; x += gw + 2 + (r() < 0.15 ? 12 : 0); } } return o; };
+const boxB = (g, W, H, r) => {   // 가로·세로 상자 흐림 두 번 = 대략 가우스
+  let a = g; for (let pass = 0; pass < 2; pass++) for (const [dx, dy, n, m] of [[1, 0, W, H], [0, 1, H, W]]) {
+    const o = new Float32Array(W * H);
+    for (let l = 0; l < m; l++) { let s = 0; const at = k => a[dx ? l * W + Math.min(n - 1, Math.max(0, k)) : Math.min(n - 1, Math.max(0, k)) * W + l];
+      for (let k = -r; k <= r; k++) s += at(k);
+      for (let k = 0; k < n; k++) { o[dx ? l * W + k : k * W + l] = s / (2 * r + 1); s += at(k + r + 1) - at(k - r); } }
+    a = o;
+  }
+  return a;
+};
+const rgbOfGray = (W, H, f) => { const o = new Uint8Array(W * H * 3); for (let i = 0; i < W * H; i++) o.fill(Math.max(0, Math.min(255, Math.round(f(i)))), i * 3, i * 3 + 3); return o; };
+test('decoded text wall: focus pulls (whole wall goes soft; left half soft→sharp while right half sharp→soft) → lens.rack; still, fade, pan or zoom with the same blur → none', () => {
+  const W = 640, H = 360, A = wall(W, H, 11), Ab = boxB(A, W, H, 5), k = t => Math.min(1, Math.max(0, (t - 0.6) / 0.5));   // 0.6–1.1s 에 흐려짐
+  const rackFor = (name, f) => { const v = raw(name, W, H, 12, 24, t => rgbOfGray(W, H, i => f(t, i))), P = probe(v); return buildCandidates(measureSeries(v, P), [], P.duration).filter(x => x.id === 'lens.rack'); };
+  const soft = rackFor('rack_soft.mp4', (t, i) => A[i] + (Ab[i] - A[i]) * k(t));
+  assert.ok(soft.length && soft[0].t0 >= 0.4 && soft[0].t1 <= 1.3, JSON.stringify(soft));
+  const half = rackFor('rack_half.mp4', (t, i) => { const left = i % W < W / 2, a = left ? 1 - k(t) : k(t); return A[i] + (Ab[i] - A[i]) * a; });
+  assert.ok(half.some(c => /→/.test(c.signal)), JSON.stringify(half));
+  assert.deepEqual(rackFor('rack_still.mp4', (t, i) => A[i]), []);
+  assert.deepEqual(rackFor('rack_fade.mp4', (t, i) => 235 + (A[i] - 235) * (1 - 0.8 * k(t))), [], '대비만 줄어듦');
+  const big = wall(W + 200, H, 12), bigB = boxB(big, W + 200, H, 5);
+  assert.deepEqual(rackFor('rack_pan.mp4', (t, i) => { const x = i % W, y = (i - x) / W, s = Math.round(t * 90), j = y * (W + 200) + x + s; return big[j] + (bigB[j] - big[j]) * k(t); }), [], '패닝 중 흐려짐');
+  assert.deepEqual(rackFor('rack_zoom.mp4', (t, i) => { const x = i % W, y = (i - x) / W, z = 1 + 0.25 * t, sx = Math.round(W / 2 + (x - W / 2) / z), sy = Math.round(H / 2 + (y - H / 2) / z), j = sy * W + sx; return A[j] + (Ab[j] - A[j]) * k(t); }), [], '확대 중 흐려짐');
 });

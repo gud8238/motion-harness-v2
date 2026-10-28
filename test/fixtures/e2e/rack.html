@@ -1,0 +1,37 @@
+<template>
+  <!-- e2e: lens.dof + lens.rack 렌더에서 lens.rack 감지기가 초점 이동을 찾는가 — 먼 글자 벽(깊이 0.4)과 앞 카드(깊이 1.4) 사이로 초점이 옮겨 간다 -->
+  <style>
+    @font-face { font-family: "Pretendard"; src: url("assets/fonts/PretendardVariable.woff2") format("woff2"); font-weight: 45 920; font-display: block; }
+    #rack { position: absolute; inset: 0; background: #f4f1ea; font-family: "Pretendard", sans-serif; overflow: hidden; }
+    #rack-world { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    #rack-far, #rack-fg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    #rack-far p { position: absolute; margin: 0; font-size: 30px; font-weight: 600; color: #2a2a2e; white-space: nowrap; }
+    #rack-card { position: absolute; left: 60px; top: 60px; width: 860px; height: 960px; background: #ffffff; border-radius: 28px; padding: 40px 48px; box-sizing: border-box; }
+    #rack-card p { margin: 0 0 18px; font-size: 54px; font-weight: 800; color: #1d1d1f; line-height: 1.15; }
+  </style>
+  <div id="rack" data-composition-id="rack" data-width="1920" data-height="1080">
+    <div id="rack-world">
+      <div id="rack-far" data-layout-allow-occlusion data-layout-allow-overlap></div>
+      <div id="rack-fg"><div id="rack-card"></div></div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const words = ['우유 사기', '치과 예약', '보고서 제출', '화분 물 주기', '택배 찾기', '회의 자료', '전기 요금', '운동 가기', '책 반납', '편지 쓰기', '세탁소', '장보기 목록'];
+      const far = document.getElementById('rack-far');
+      for (let r = 0; r < 24; r++) for (let c = 0; c < 6; c++) {
+        const p = document.createElement('p'); p.setAttribute('data-layout-allow-occlusion', ''); p.textContent = words[(r * 7 + c * 5) % words.length];
+        p.style.left = (20 + c * 320 + (r % 2) * 40) + 'px'; p.style.top = (10 + r * 44) + 'px'; far.appendChild(p);
+      }
+      const card = document.getElementById('rack-card');
+      for (let r = 0; r < 12; r++) { const p = document.createElement('p'); p.textContent = words[(r * 5 + 3) % words.length] + ' · ' + words[(r * 3 + 1) % words.length]; card.appendChild(p); }
+      const lens = MH.lens, tl = gsap.timeline({ paused: true });
+      const cam = MH.cam(document.getElementById('rack-world'));
+      cam.layer(far, 0.4).layer(document.getElementById('rack-fg'), 1.4);
+      const dof = lens.dof(cam, { focus: 1.4, aperture: 6 });
+      lens.rack(dof, [[0.8, 1.4], [1.8, 0.4]]);   // 앞 카드 → 먼 글자 벽
+      MH.drive(tl, 3, t => { cam.render(t); dof.render(t); });
+      window.__timelines["rack"] = tl;
+    })();
+  </script>
+</template>

@@ -3,7 +3,7 @@
 // 각도 규약: 도 단위, 0° = +x(오른쪽), 양수 = 화면에서 시계 방향(y 아래이므로 +y 쪽으로 도는 방향).
 import { toLab, dE, hex as toHex } from '../_common.mjs';
 
-const ID = () => ({ dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0 });
+const ID = () => ({ dx: 0, dy: 0, scale: 1, rot: 0, parallax: 0, res: 0, n: 0, rotQ: null });
 const GX = 8, GY = 6, TEX = 2, RMAX = 12;   // 격자, 텍스처 판정(화소당 SAD 최소·최대 차), 탐색 반경 상한(px)
 
 // 블록 하나의 ±M 정수 SAD 표 → 최소점 + 등각(V자) 보간 이동. 텍스처 없으면 null
@@ -18,12 +18,12 @@ function matchBlock(a, b, w, x0, y0, x1, y1, M) {
     if (s > mx) mx = s;
   }
   if ((mx - mn) / n < TEX) return null;
-  const bx = bi % S, by = bi / S | 0;
+  const bx = bi % S, by = bi / S | 0, edge = bx === 0 || by === 0 || bx === S - 1 || by === S - 1;   // 최소가 탐색 창 끝 = 극소가 아님(범위 밖 이동이거나 맞는 곳 없음)
   // SAD 는 최소점 근처에서 V자 → 등각 보간 (l = −1, r = +1 쪽 SAD)
   const vfit = (l, c, r) => { const m = Math.max(l, r) - c; return m > 0 ? Math.max(-0.5, Math.min(0.5, (l - r) / (2 * m))) : 0; };
   const fx = bx > 0 && bx < S - 1 ? vfit(sad[bi - 1], mn, sad[bi + 1]) : 0;
   const fy = by > 0 && by < S - 1 ? vfit(sad[bi - S], mn, sad[bi + S]) : 0;
-  return [bx - M + fx, by - M + fy];
+  return [bx - M + fx, by - M + fy, edge];
 }
 
 // 유사 변환 최소제곱: X = A·u − B·v + tx, Y = B·u + A·v + ty (X,Y = 옮겨진 위치 − c), A = s·cosθ, B = s·sinθ — 무게중심 정리 후 닫힌 해
@@ -38,11 +38,21 @@ function fitSim(P) {
 }
 const resid = (p, f) => [p.u + p.vx - (f.A * p.u - f.B * p.v + f.tx), p.v + p.vy - (f.B * p.u + f.A * p.v + f.ty)];
 
+// 사분면별 회전(도, [왼쪽 위, 오른쪽 위, 왼쪽 아래, 오른쪽 아래]): 적합의 이동·확대를 뺀 블록 움직임의 화면 중심 둘레 각 성분.
+// 카메라 롤이면 네 값이 같은 방향이고, 화면 일부(휴대폰 안 스크롤·흐린 배경의 빛)가 만든 가짜 회전이면 방향이 갈린다. 블록 없는 사분면은 null
+function quadRot(P, f) {
+  const s = Math.hypot(f.A, f.B), Q = [[0, 0], [0, 0], [0, 0], [0, 0]];
+  for (const p of P) { const ex = p.vx - ((s - 1) * p.u + f.tx), ey = p.vy - ((s - 1) * p.v + f.ty), q = (p.u < 0 ? 0 : 1) + (p.v < 0 ? 0 : 2); Q[q][0] += p.u * ey - p.v * ex; Q[q][1] += p.u * p.u + p.v * p.v; }
+  return Q.map(([a, b]) => b ? Math.atan(a / b) * 180 / Math.PI : null);
+}
+
 // 전역 카메라 움직임: a 의 내용이 b 에서 p_b = s·R(rot)·(p_a − c) + c + (dx, dy) 로 옮겨졌다고 보고 적합 (c = 화면 중심).
 // opts.range = 블록 탐색 반경 px (기본 6, 1~12 로 제한). 이보다 큰 프레임 간 이동은 약 range 로 포화된다.
 // 적합: 전체 최소제곱 → 잔차 큰 25% 블록을 빼고 한 번 더 적합(자막·로고 같은 고정 요소 배제).
 // parallax = 위 절반·아래 절반 블록 잔차 평균 이동 차의 크기(px), res = 블록 잔차 평균(px) — 둘 다 모든 유효 블록을 최종 적합에 대해 계산.
 // n = 유효(텍스처 있는) 블록 수. n < 6 이면 측정 불가 → 항등 결과 + n: 0 (정지와 구분하려면 n 을 볼 것).
+// rotQ = 사분면별 회전(quadRot) — 최소가 탐색 창 안쪽인(포화되지 않은) 블록만으로 다시 적합해 잰다(창 끝에 걸린 블록은 이동을 잰 게 아니다:
+// 범위 밖 이동이거나 흐린 배경처럼 맞는 곳이 없음). 안쪽 블록이 6개 미만이면 null.
 export function globalMotion(a, b, w, h, opts = {}) {
   const M = Math.max(1, Math.min(RMAX, Math.round(opts.range ?? 6)));
   const bw = Math.floor(w / GX), bh = Math.floor(h / GY), cx = (w - 1) / 2, cy = (h - 1) / 2, P = [];
@@ -50,17 +60,17 @@ export function globalMotion(a, b, w, h, opts = {}) {
     const x0 = Math.max(c * bw, M), x1 = Math.min(c * bw + bw, w - M), y0 = Math.max(r * bh, M), y1 = Math.min(r * bh + bh, h - M);
     if (x1 - x0 < 4 || y1 - y0 < 3) continue;
     const v = matchBlock(a, b, w, x0, y0, x1, y1, M);
-    if (v) P.push({ u: (x0 + x1 - 1) / 2 - cx, v: (y0 + y1 - 1) / 2 - cy, vx: v[0], vy: v[1], top: r < GY / 2 });
+    if (v) P.push({ u: (x0 + x1 - 1) / 2 - cx, v: (y0 + y1 - 1) / 2 - cy, vx: v[0], vy: v[1], top: r < GY / 2, edge: v[2] });
   }
   const n = P.length;
   if (n < 6) return ID();
-  let f = fitSim(P);
-  const keep = Math.max(6, Math.ceil(n * 0.75));
-  if (keep < n) f = fitSim(P.map(p => [Math.hypot(...resid(p, f)), p]).sort((x, y) => x[0] - y[0]).slice(0, keep).map(x => x[1]));
+  // 적합: 전체 최소제곱 → 잔차 큰 25% 를 빼고 다시 (최소 6블록)
+  const robust = Q => { let f = fitSim(Q); const keep = Math.max(6, Math.ceil(Q.length * 0.75)); if (keep < Q.length) f = fitSim(Q.map(p => [Math.hypot(...resid(p, f)), p]).sort((x, y) => x[0] - y[0]).slice(0, keep).map(x => x[1])); return f; };
+  const f = robust(P), In = P.filter(p => !p.edge), fi = In.length >= 6 ? robust(In) : null;
   let res = 0; const half = { t: [0, 0, 0], b: [0, 0, 0] };
   for (const p of P) { const [ex, ey] = resid(p, f), q = p.top ? half.t : half.b; res += Math.hypot(ex, ey); q[0] += ex; q[1] += ey; q[2]++; }
   const parallax = half.t[2] && half.b[2] ? Math.hypot(half.t[0] / half.t[2] - half.b[0] / half.b[2], half.t[1] / half.t[2] - half.b[1] / half.b[2]) : 0;
-  return { dx: f.tx, dy: f.ty, scale: Math.hypot(f.A, f.B), rot: Math.atan2(f.B, f.A) * 180 / Math.PI, parallax, res: res / n, n };
+  return { dx: f.tx, dy: f.ty, scale: Math.hypot(f.A, f.B), rot: Math.atan2(f.B, f.A) * 180 / Math.PI, parallax, res: res / n, n, rotQ: fi ? quadRot(In, fi) : null };
 }
 
 // 칸별 4-이웃 라플라시안 분산. 순서 = 행 우선(index = row·gx + col)
@@ -75,6 +85,24 @@ export function sharpness(g, w, h, grid = [4, 3]) {
   }
   for (let k = 0; k < N; k++) if (cnt[k]) { const m = s1[k] / cnt[k]; out[k] = Math.max(0, s2[k] / cnt[k] - m * m); }
   return out;
+}
+
+// 칸별 밝기 분포: v[k] = 칸 k(sharpness 와 같은 격자, 같은 안쪽 화소)의 밝기 분산, m = 칸마다 sub×sub 로 나눈 작은 블록 평균(행 우선, 폭 gx·sub).
+// 초점이 빠지면 라플라시안 분산(세부)은 크게 줄지만 블록 평균(구조)은 남고 라플라시안/밝기 분산(세부의 비중)도 줄어든다 —
+// 흐려지며 사라짐(대비만 줄어듦: 비중 그대로)·움직임(구조가 바뀜)과 가르는 근거.
+export function cellTone(g, w, h, grid = [4, 3], sub = 4) {
+  const [gx, gy] = grid, N = gx * gy, s1 = new Float64Array(N), s2 = new Float64Array(N), cnt = new Float64Array(N), v = new Float32Array(N);
+  const BX = gx * sub, BY = gy * sub, b1 = new Float64Array(BX * BY), bc = new Float64Array(BX * BY), m = new Float32Array(BX * BY);
+  for (let y = 0; y < h; y++) {
+    const row = Math.floor(y * gy / h) * gx, brow = Math.floor(y * BY / h) * BX, inner = y > 0 && y < h - 1;
+    for (let x = 0; x < w; x++) {
+      const p = g[y * w + x], b = brow + Math.floor(x * BX / w); b1[b] += p; bc[b]++;
+      if (inner && x > 0 && x < w - 1) { const k = row + Math.floor(x * gx / w); s1[k] += p; s2[k] += p * p; cnt[k]++; }
+    }
+  }
+  for (let k = 0; k < N; k++) if (cnt[k]) { const a = s1[k] / cnt[k]; v[k] = Math.max(0, s2[k] / cnt[k] - a * a); }
+  for (let b = 0; b < BX * BY; b++) m[b] = bc[b] ? b1[b] / bc[b] : 0;
+  return { v, m, gx, gy, sub };
 }
 
 // 방향 흐림: 수평·수직·대각(↘ 45°, ↙ 135°) 화소당 그라디언트 에너지(대각은 거리² 로 나눔).

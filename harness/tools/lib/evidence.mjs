@@ -1,5 +1,5 @@
 // 레퍼런스 효과 근거표: 감지기 시계열(Series) → 효과 후보(Candidate) → 후보별 strip 이미지
-// Series 항목 = { t, gm(i→i+1), gm3(i→i+3, 끝 3프레임·컷 너머는 null), rs3(i→i+3 반지름 스펙트럼 크기비 {scale, corr}, 같은 조건), sharp, dblur, fill, jitter, band, blobs } — 모든 px 은 움직임 프레임(seriesSize) 기준.
+// Series 항목 = { t, gm(i→i+1), gm3(i→i+3, 끝 3프레임·컷 너머는 null), rs3(i→i+3 반지름 스펙트럼 크기비 {scale, corr}, 같은 조건), sharp, tone(칸별 밝기 분산·블록 평균), dblur, fill, jitter, band, blobs } — 모든 px 은 움직임 프레임(seriesSize) 기준.
 // 감지기 하나가 실패하면 그 칸만 null. buildCandidates 는 null 칸을 건너뛴다.
 // Candidate = { id, t0, t1, score(0~1), signal(한국어 설명) }. 판정 문턱은 TH (Task 17b 에서 레퍼런스 A·B 로 보정 — docs/superpowers/acceptance/2026-10-27-acceptance.md).
 import fs from 'fs';
@@ -16,19 +16,20 @@ export const TH = {
   moveEps: 0.25, moveScale: 0.002, moveRot: 0.05,                            // 프레임당 이만큼 넘으면 '움직이는 프레임'
   pushDur: 0.8, pushIn: 1.15, pushOut: 0.87, rsCorr: 0.8,                   // cam.push (rsCorr: 반지름 스펙트럼 크기비를 믿는 최소 상관 — 낮으면 확대가 아니라 내용이 바뀐 것)
   panDur: 0.8, panFrac: 0.25, panScaleTol: 0.08,                             // cam.pan (누적 이동 > 0.25·w)
-  rotDeg: 4,                                                                 // cam.rotate
+  rotDeg: 4,                                                                 // cam.rotate: 네 사분면(rotQ) 모두 같은 방향으로 4°↑ — 화면 일부의 움직임이 만든 가짜 회전 제외
   shakeWin: 0.5, shakeFlips: 3, shakeAmpLo: 0.003, shakeAmpHi: 0.03, shakeEps: 0.15, shakeSnr: 1,   // cam.shake (진폭 = 폭 대비; 방향 반전은 이동이 블록 잔차 평균보다 클 때만 센다 — 맞춤 잡음의 흔들림 제외)
   parallaxPx: 1.0, parallaxDur: 0.6, parallaxCam: 0.3, parallaxCoh: 1.2,   // cam.parallax (카메라도 움직일 때만, 위·아래 차가 블록 잔차 평균의 1.2배↑ = 잔차가 두 층으로 갈라짐 — 맞춤 실패의 흩어진 잔차가 아님)
   onetakeDur: 6, onetakeMoving: 0.6,                                         // cam.onetake
   dofRatio: 2.5, dofDur: 1, dofEdgeMin: 1.5,                                 // lens.dof (가장자리가 완전한 단색이면 심도가 아님)
-  rackDur: 1.5, rackCells: 2, rackDom: 1.5, rackDrop: 0.5, rackMove: 1, rackFloor: 20, rackStep: 4,   // lens.rack (카메라가 거의 멈춰 있을 때만, 프레임당 px; 두 칸 모두 앞뒤로 라플라시안 분산 ≥20, 한 프레임에 4배 넘게 뛰지 않음 = 내용이 생기거나 사라진 게 아니라 초점이 옮겨 감)
+  rackDur: 1.5, rackMin: 0.25, rackMove: 1, rackDrop: 0.5, rackFloor: 20, rackTex: 400, rackStep: 4,   // lens.rack: 카메라 정지(프레임당 1px 미만) 0.25~1.5초 사이 칸의 라플라시안 분산이 절반↓(흐려짐) 또는 2배↑(선명해짐).
+  rackMono: 1.15, rackNorm: 0.85, rackKeep: 3, rackShare: 0.6, rackCells: 0.5,   // 칸 조건: 선명한 쪽 ≥400(글자·무늬; 별·입자 같은 성긴 점은 아래), 흐린 쪽 ≥20, 한 프레임에 4배↑ 뛰지 않고 한 방향(15% 되돌림까지), 세부 비중(라플라시안/밝기 분산) 0.85배↓, 블록 평균 차 ≤3 = 같은 내용이 흐려짐(사라짐·움직임 아님). 흐려지는 칸 + 선명해지는 칸, 또는 텍스처 칸(격자 절반↑)의 60%↑가 함께 흐려지거나 선명해짐
   mblurMove: 3, mblurRatio: 2.2, mblurShare: 0.3, mblurMin: 4,               // lens.mblur (흐림 비 = 시계열 중앙값의 배수)
   smearMove: 1, smearRatio: 2.2, smearRun: 4, smearWin: 1,                  // lens.smear (흐림 비 기준 = 같은 샷 ±1초 중앙값 — 글자 줄 같은 고정 줄무늬는 늘 높다, R5)
   vhsCover: 0.95, vhsStep: 6, vhsNear: 4, vhsBandJit: 0.4, vhsMove: 2, vhsSpeed: 0.5, vhsDur: 0.4, vhsGap: 0.17,   // fx.vhs: 화면 폭 95%↑를 가로지르는 경계(밝기 6↑) + 근처 ±4행 어긋남 0.4px↑, 앞 1~2프레임보다 2행↑ 옮겨 감(R5: 고정 경계 제외), 구간 안 띠 이동 중앙값 ≥ 높이의 0.5배/초(천천히 스크롤되는 구획 경계 제외), 0.4초↑ (0.17초 빈틈 허용, 오버레이라 컷을 넘어 이어짐)
   glitchJitter: 2.0, glitchMaxDur: 0.5, glitchBursts: 2, jitterRows: 0.1,   // fx.glitch (jitter = 시계열 중앙값 + 이 값; 텍스처 있는 행 쌍이 10% 미만인 프레임은 0)
   fillLo: 0.4, fillHi: 0.85, fillWin: 1.0, fillDE: 10,                       // trans.fill (R5: ≥0.85 = 채움; 단색 바탕 A → B 채움은 중간 프레임이 A·B 둘 중 하나(ΔE<10)여야 — 디졸브·컷 제외)
   zoomWin: 0.5, zoomRate: 1.5,                                               // trans.zoomThrough (배/초)
-  whipWin: 0.4, whipSpeed: 0.5, whipBlurRise: 1.5, whipNear: 0.5,            // trans.whip (속도 = 폭/초)
+  whipWin: 0.4, whipSpeed: 0.5, whipBlurRise: 1.5, whipNear: 0.5, whipAxis: 45,   // trans.whip (속도 = 폭/초): 컷 앞·뒤 모두 빠른 이동(또는 매칭 붕괴 + 방향 흐림)이 있고 방향(흐림은 축)이 45° 안
   matchDist: 0.08, matchSig: 0.85, matchAreaLo: 0.5, matchAreaHi: 2, matchMinArea: 0.01,   // trans.match (거리 = 대각선 대비; 화면 1% 미만 조각(글자·점)은 매치 컷의 주인공이 아니다)
   sharedCuts: 2, sharedPresence: 0.8,                                        // trans.shared
   morphDt: 0.5, morphSig: 0.6, morphMinArea: 0.01, morphGap: 0.1, morphCam: 1,   // morph.shape: 0.5초 사이 모양 유사도 < 0.6, 덩어리 ≥1%, 0.1초까지는 안 보여도 됨, 카메라 이동 < 1px/프레임
@@ -110,6 +111,7 @@ export function measureSeries(file, P, opts = {}) {
       gm3: i + 3 < n && !crosses(cuts, t, (i + 3) / fps, fps) ? safe('globalMotion', () => gm3(i)) : null,
       rs3: i + 3 < n && prof[i] && prof[i + 3] && !crosses(cuts, t, (i + 3) / fps, fps) ? safe('profileScale', () => D.profileScale(prof[i], prof[i + 3])) : null,
       sharp: safe('sharpness', () => D.sharpness(g(i), gw, gh)),
+      tone: safe('cellTone', () => D.cellTone(g(i), gw, gh)),
       dblur: safe('directionalBlur', () => D.directionalBlur(g(i), gw, gh)),
       fill: safe('fillRatio', () => D.fillRatio(c(i), cw, ch)),
       jitter: safe('rowJitter', () => D.rowJitter(g(i), gw, gh, { minRows: Math.ceil(TH.jitterRows * (gh - 1)) })),
@@ -194,12 +196,17 @@ const RULES = {
     return [{ id: 'cam.pan', t0: x.T(best.p), t1: x.T(best.q), score: score(best.v, lim), signal: `누적 이동 x ${best.R.dx.toFixed(1)} · y ${best.R.dy.toFixed(1)}px (폭의 ${pct(best.v / x.W)}%, 확대 변화 ${pct(Math.abs(best.R.s - 1))}%)` }];
   }),
   'cam.rotate': x => x.segs.flatMap(([a, b]) => {
-    const { pts } = walk(x.S, a, b); let best = null;
+    // 카메라 롤은 화면 전체를 같은 방향으로 돌린다 → 사분면별 회전(rotQ)을 따로 누적해 가장 약한 사분면의 같은 방향 회전으로 판정.
+    // rotQ 가 없는 측정(합성 시계열)은 전역 회전을 네 사분면에 쓴다. 같은 걸음에서 rotQ 가 null(안쪽 블록 부족)이면 그 걸음은 회전 0
+    const { pts, steps } = walk(x.S, a, b), by = new Map(steps.map(s => [s.i, s.m])), Q = [[0, 0, 0, 0]];
+    for (let k = 1; k < pts.length; k++) { const m = by.get(pts[k - 1].i), q = !m ? [] : m.rotQ === undefined ? Array(4).fill(num(m.rot) ?? 0) : (m.rotQ || []); Q.push(Q[k - 1].map((v, j) => v + (num(q[j]) ?? 0))); }
+    let best = null;
     for (let p = 0; p < pts.length; p++) for (let q = p + 1; q < pts.length; q++) {
-      const v = Math.abs(relT(pts[p].T, pts[q].T).r); if (!best || v > best.v) best = { v, p: pts[p].i, q: pts[q].i };
+      const r = relT(pts[p].T, pts[q].T).r, s = Math.sign(r) || 1, v = Math.min(...Q[q].map((u, k) => s * (u - Q[p][k])));
+      if (!best || v > best.v) best = { v, r, p: pts[p].i, q: pts[q].i };
     }
     if (!best || best.v <= TH.rotDeg) return [];
-    return [{ id: 'cam.rotate', t0: x.T(best.p), t1: x.T(best.q), score: score(best.v, TH.rotDeg), signal: `누적 회전 ${best.v.toFixed(1)}° (무컷)` }];
+    return [{ id: 'cam.rotate', t0: x.T(best.p), t1: x.T(best.q), score: score(best.v, TH.rotDeg), signal: `누적 회전 ${Math.abs(best.r).toFixed(1)}° (무컷, 네 사분면 모두 같은 방향 — 가장 약한 사분면 ${best.v.toFixed(1)}°)` }];
   }),
   'cam.shake': x => {
     const w = Math.max(2, Math.round(TH.shakeWin * x.fps)), hit = new Set(), lo = TH.shakeAmpLo * x.W, hi = TH.shakeAmpHi * x.W;
@@ -245,24 +252,54 @@ const RULES = {
     });
   },
   'lens.rack': x => {
-    const top = x.S.map(e => {
-      const s = e.sharp; if (!s || s.length !== 12) return null;
-      let k = 0; for (let j = 1; j < 12; j++) if (s[j] > s[k]) k = j;
-      return s[k] >= TH.rackDom * lowMedian(Array.from(s)) && s[k] > 0 ? k : null;
-    });
-    const dist = (p, q) => Math.abs(p % 4 - q % 4) + Math.abs((p / 4 | 0) - (q / 4 | 0)), seg = x.segOf, out = [];
+    // 초점 이동 = 카메라가 멈춘 채 같은 내용의 세부가 흐려지거나 살아남. 칸마다: 라플라시안 분산(세부)이 절반↓·2배↑, 여러 프레임에 걸쳐 한 방향으로,
+    // 세부 비중(라플라시안/밝기 분산)도 같은 쪽으로 변함(대비만 줄어드는 사라짐·어두워짐은 비중이 그대로), 블록 평균이 그대로(움직임·바뀐 내용 아님).
+    // 흐려지는 칸과 선명해지는 칸이 함께 있거나(초점이 한 대상에서 다른 대상으로), 텍스처 칸 대부분이 함께 흐려지면(초점이 잴 수 없을 만큼 작은 대상으로 — 글자 벽 앞 작은 캐릭터) 랙포커스.
+    // tone 이 없는 시계열(합성)은 비중·구조 검사를 건너뛴다
+    const N = 12, minK = Math.max(1, Math.round(TH.rackMin * x.fps)), out = [];
+    const L = (i, c) => x.S[i].sharp?.[c] ?? 0;
     const still = (i, j) => { let s = 0; for (let k = i; k < j; k++) s += camPx(x, x.S[k].gm); return s / (j - i) < TH.rackMove; };   // 화면이 흘러가거나 확대되면 선명 칸도 따라 움직인다
-    const gradual = (i, j, c) => { for (let k = i + 1; k <= j; k++) { const a = Math.max(x.S[k - 1].sharp?.[c] ?? 0, TH.rackFloor), b = Math.max(x.S[k].sharp?.[c] ?? 0, TH.rackFloor); if (Math.max(a / b, b / a) > TH.rackStep) return false; } return true; };
-    let hold = null;
-    for (let j = 0; j < x.n; j++) {
-      if (top[j] == null) continue; if (top[j] === hold) continue; hold = null;
-      for (let i = j - 1; i >= 0 && x.T(j) - x.T(i) <= TH.rackDur + 1e-6; i--) {
-        if (top[i] == null || seg[i] !== seg[j] || dist(top[i], top[j]) < TH.rackCells || !still(i, j)) continue;
-        const si = x.S[i].sharp, sj = x.S[j].sharp;
-        if (sj[top[i]] < TH.rackDrop * si[top[i]] && si[top[j]] < TH.rackDrop * sj[top[j]] && sj[top[i]] >= TH.rackFloor && si[top[j]] >= TH.rackFloor && gradual(i, j, top[i]) && gradual(i, j, top[j])) {
-          out.push({ id: 'lens.rack', t0: x.T(i), t1: x.T(j), score: score(dist(top[i], top[j]), TH.rackCells), signal: `가장 선명한 칸 ${top[i] + 1} → ${top[j] + 1} (4×3 격자, ${dist(top[i], top[j])}칸 이동)` });
-          hold = top[j]; break;
+    const steady = (i, j, c, dir) => {   // 한 프레임에 rackStep 배↑ 뛰지 않고(내용이 생기거나 사라짐), 한 방향으로(rackMono 까지 되돌림 허용)
+      let ext = L(i, c);
+      for (let k = i + 1; k <= j; k++) {
+        const a = Math.max(L(k - 1, c), TH.rackFloor), b = Math.max(L(k, c), TH.rackFloor), v = L(k, c);
+        if (Math.max(a / b, b / a) > TH.rackStep || (dir < 0 ? v > TH.rackMono * ext : v * TH.rackMono < ext)) return false;
+        ext = dir < 0 ? Math.min(ext, v) : Math.max(ext, v);
+      }
+      return true;
+    };
+    const share = (o, c) => (x.S[o].sharp?.[c] ?? 0) / ((x.S[o].tone?.v?.[c] ?? 0) + 1);
+    const same = (i, j, c) => {   // 같은 내용인가: 칸 안 블록 평균 차 ≤ rackKeep
+      const A = x.S[i].tone, B = x.S[j].tone; if (!A?.m || !B?.m) return true;
+      const sub = A.sub, BX = A.gx * sub, cx = c % A.gx, cy = c / A.gx | 0; let d = 0;
+      for (let y = cy * sub; y < cy * sub + sub; y++) for (let u = cx * sub; u < cx * sub + sub; u++) d += Math.abs(A.m[y * BX + u] - B.m[y * BX + u]);
+      return d / (sub * sub) <= TH.rackKeep;
+    };
+    const tone = (i, j) => x.S[i].tone?.v && x.S[j].tone?.v;
+    for (let i = 0; i + minK < x.n; i++) {   // 시작 프레임마다 조건을 처음 채우는 가장 짧은 구간 → 겹치는 구간은 병합(초점이 다 옮겨 간 뒤의 정지는 구간에 넣지 않는다)
+      for (let j = i + minK; j < x.n && x.T(j) - x.T(i) <= TH.rackDur + 1e-6; j++) {
+        if (x.segOf[i] !== x.segOf[j] || !x.S[i].sharp || x.S[i].sharp.length !== N || !x.S[j].sharp || x.S[j].sharp.length !== N || !still(i, j)) continue;
+        const tex = [], dn = [], up = [];
+        for (let c = 0; c < N; c++) {
+          const a = L(i, c), b = L(j, c); if (Math.min(a, b) < TH.rackFloor || Math.max(a, b) < TH.rackTex) continue;
+          tex.push(c);
+          if (!same(i, j, c)) continue;
+          const q = tone(i, j) ? share(j, c) / Math.max(share(i, c), 1e-9) : null;
+          if (b <= TH.rackDrop * a && (q == null || q <= TH.rackNorm) && steady(i, j, c, -1)) dn.push(c);
+          else if (a <= TH.rackDrop * b && (q == null || 1 / q <= TH.rackNorm) && steady(i, j, c, 1)) up.push(c);
         }
+        const all = tex.length >= TH.rackCells * N && Math.max(dn.length, up.length) >= TH.rackShare * tex.length;
+        if (!(dn.length && up.length) && !all) continue;
+        const fold = [...dn.map(c => L(i, c) / Math.max(L(j, c), 1e-9)), ...up.map(c => L(j, c) / Math.max(L(i, c), 1e-9))], med = lowMedian(fold), cell = a => a.map(c => c + 1).join('·');
+        // 구간 = 바뀐 칸들의 로그 변화가 10% → 90% 진행된 사이 (앞뒤의 정지 프레임은 뺀다)
+        const lg = (k, c) => Math.log(Math.max(L(k, c), TH.rackFloor) / Math.max(L(i, c), TH.rackFloor)), ch = [...dn, ...up];
+        const prog = k => lowMedian(ch.map(c => lg(k, c) / (lg(j, c) || 1)));
+        let k0 = i, k1 = j; for (let k = i; k <= j; k++) { if (prog(k) <= 0.1) k0 = k; }
+        for (let k = j; k >= k0; k--) if (prog(k) >= 0.9) k1 = k;
+        out.push({ id: 'lens.rack', t0: x.T(k0), t1: x.T(k1), score: score(med, 1 / TH.rackDrop), signal: dn.length && up.length
+          ? `카메라 정지 중 초점이 칸 ${cell(dn)} → ${cell(up)} 로 옮겨 감 (4×3 격자, 세부 변화 중앙값 ${med.toFixed(1)}배, 같은 내용)`
+          : `카메라 정지 중 텍스처 칸 ${tex.length}개 중 ${Math.max(dn.length, up.length)}개가 함께 ${dn.length >= up.length ? '흐려짐' : '선명해짐'} (세부 ${med.toFixed(1)}배, 같은 내용 — 초점이 작은 대상으로/에서 옮겨 감)` });
+        break;
       }
     }
     return out;
@@ -343,23 +380,30 @@ const RULES = {
     return [{ id: 'trans.zoomThrough', t0: Math.max(0, c - TH.zoomWin), t1: c, score: score(rate - 1, TH.zoomRate - 1), signal: `컷(${f2(c)}s) 직전 확대 속도 ${f2(rate)}배/초` }];
   }),
   'trans.whip': x => x.cuts.flatMap(c => {
-    const near = [], lim = TH.whipSpeed * x.W, nb = Math.round(TH.whipNear * x.fps); let why = '';
+    // 휙 넘김 = 컷 앞에서 빠르게 흘러 나가고 컷 뒤에서 같은 방향으로 흘러 들어옴. 쪽마다 근거: 측정된 빠른 이동(방향) 또는 블록 매칭 붕괴 + 방향 흐림 상승(축).
+    // 두 쪽 모두 근거가 있고 방향(흐림이 끼면 축)이 whipAxis° 안이어야 한다 — 한쪽만 흐리거나(어두워짐·눈 감김) 서로 다른 쪽으로 움직이면 휩이 아니다
+    const lim = TH.whipSpeed * x.W, nb = Math.round(TH.whipNear * x.fps), side = [[], []];
     for (let i = 0; i < x.n; i++) {
       if (Math.abs(x.T(i) - c) > TH.whipWin + 1e-6) continue;
-      const m = x.S[i].gm;
+      const m = x.S[i].gm, k = x.T(i) + 0.5 / x.fps <= c ? 0 : 1;
       if (gmOk(m) && i + 1 < x.n && !crosses(x.cuts, x.T(i), x.T(i + 1), x.fps)) {
-        const v = Math.hypot(m.dx, m.dy) * x.fps; if (v >= lim) { near.push(i); why = `이동 속도 ${Math.round(v)}px/s (폭의 ${f2(v / x.W)}배/초)`; continue; }
+        const v = Math.hypot(m.dx, m.dy) * x.fps; if (v >= lim) { side[k].push({ i, dir: Math.atan2(m.dy, m.dx) * 180 / Math.PI, why: `이동 속도 ${Math.round(v)}px/s (폭의 ${f2(v / x.W)}배/초)` }); continue; }
       }
-      const flat = k => k < x.n && (x.S[k].fill?.ratio ?? 0) >= TH.fillHi;   // 단색 화면은 원래 블록 매칭이 안 된다 → 붕괴의 근거가 아님
+      const flat = j => j < x.n && (x.S[j].fill?.ratio ?? 0) >= TH.fillHi;   // 단색 화면은 원래 블록 매칭이 안 된다 → 붕괴의 근거가 아님
       if (m && m.n < TH.minBlocks && x.S[i].dblur && !flat(i) && !flat(i + 1)) {
         const ns = [], rs = [];
         for (let j = Math.max(0, i - nb); j <= Math.min(x.n - 1, i + nb); j++) if (Math.abs(j - i) > 1) { if (x.S[j].gm) ns.push(x.S[j].gm.n ?? Infinity); if (x.S[j].dblur) rs.push(x.S[j].dblur.ratio); }
         const rb = lowMedian(rs);
-        if (ns.length && lowMedian(ns) >= TH.minBlocks && rs.length && x.S[i].dblur.ratio >= TH.whipBlurRise * rb) { near.push(i); why = `블록 매칭 붕괴(유효 ${m.n}칸) + 흐림 비 ${f2(x.S[i].dblur.ratio)} (주변 ${f2(rb)})`; }
+        if (ns.length && lowMedian(ns) >= TH.minBlocks && rs.length && x.S[i].dblur.ratio >= TH.whipBlurRise * rb) side[k].push({ i, axis: num(x.S[i].dblur.angle) ?? 0, why: `블록 매칭 붕괴(유효 ${m.n}칸) + 흐림 비 ${f2(x.S[i].dblur.ratio)} (주변 ${f2(rb)})` });
       }
     }
-    if (!near.length) return [];
-    return [{ id: 'trans.whip', t0: Math.min(c, x.T(near[0])), t1: Math.max(c, x.T(near.at(-1)) + 1 / x.fps), score: score(near.length, 1), signal: `컷(${f2(c)}s) 전후 ${why}` }];
+    const diff = (a, b, period) => { const d = ((a - b) % period + period) % period; return Math.min(d, period - d); };
+    const agree = (p, q) => p.dir != null && q.dir != null ? diff(p.dir, q.dir, 360) <= TH.whipAxis : diff(p.dir ?? p.axis, q.dir ?? q.axis, 180) <= TH.whipAxis;
+    let pair = null;
+    for (const p of side[0]) for (const q of side[1]) if (agree(p, q) && (!pair || q.i - p.i < pair[1].i - pair[0].i)) pair = [p, q];
+    if (!pair) return [];
+    const near = [...side[0], ...side[1]].filter(e => side[0].concat(side[1]).some(o => o !== e && agree(e, o))).map(e => e.i).sort((a, b) => a - b);
+    return [{ id: 'trans.whip', t0: Math.min(c, x.T(near[0])), t1: Math.max(c, x.T(near.at(-1)) + 1 / x.fps), score: score(near.length, 2), signal: `컷(${f2(c)}s) 앞: ${pair[0].why} · 뒤: ${pair[1].why} (같은 방향)` }];
   }),
   'trans.match': x => x.cuts.flatMap(c => {
     const a = x.lastBefore(c), b = x.firstAfter(c); if (a < 0 || b < 0) return [];
