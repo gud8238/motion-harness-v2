@@ -197,9 +197,11 @@ const RULES = {
   }),
   'cam.rotate': x => x.segs.flatMap(([a, b]) => {
     // 카메라 롤은 화면 전체를 같은 방향으로 돌린다 → 사분면별 회전(rotQ)을 따로 누적해 가장 약한 사분면의 같은 방향 회전으로 판정.
-    // rotQ 가 없는 측정(합성 시계열)은 전역 회전을 네 사분면에 쓴다. 같은 걸음에서 rotQ 가 null(안쪽 블록 부족)이면 그 걸음은 회전 0
+    // rotQ 가 없는 측정(합성 시계열)은 전역 회전을 네 사분면에 쓴다. 같은 걸음에서 rotQ 가 null(안쪽 블록 부족)이면 그 걸음은 회전 0.
+    // 한 사분면만 비어 있으면(하늘·단색 배경 구석) 그 칸은 잰 세 사분면의 평균으로 채운다 — 평평한 구석 하나가 진짜 롤을 막지 않게
+    const fillQ = q => { const v = [0, 1, 2, 3].map(j => num(q[j])), ok = v.filter(u => u !== undefined && u !== null); if (ok.length < 3) return [0, 0, 0, 0]; const avg = ok.reduce((s, u) => s + u, 0) / ok.length; return v.map(u => u ?? avg); };
     const { pts, steps } = walk(x.S, a, b), by = new Map(steps.map(s => [s.i, s.m])), Q = [[0, 0, 0, 0]];
-    for (let k = 1; k < pts.length; k++) { const m = by.get(pts[k - 1].i), q = !m ? [] : m.rotQ === undefined ? Array(4).fill(num(m.rot) ?? 0) : (m.rotQ || []); Q.push(Q[k - 1].map((v, j) => v + (num(q[j]) ?? 0))); }
+    for (let k = 1; k < pts.length; k++) { const m = by.get(pts[k - 1].i), q = !m ? [0, 0, 0, 0] : m.rotQ === undefined ? Array(4).fill(num(m.rot) ?? 0) : fillQ(m.rotQ || []); Q.push(Q[k - 1].map((v, j) => v + q[j])); }
     let best = null;
     for (let p = 0; p < pts.length; p++) for (let q = p + 1; q < pts.length; q++) {
       const r = relT(pts[p].T, pts[q].T).r, s = Math.sign(r) || 1, v = Math.min(...Q[q].map((u, k) => s * (u - Q[p][k])));

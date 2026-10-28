@@ -52,6 +52,9 @@ test('rotation must turn all four quadrants the same way (rotQ) — a sub-region
   const c = buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [0.9, -0.6, 0.9, 0.8] })), [], 2, 160, 90);   // 레퍼런스 B 10.3–12.8s: 한 사분면이 반대로 돈다
   assert.ok(!ids(c).includes('cam.rotate'), JSON.stringify(c));
   assert.ok(!ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [1.2, 0.05, 0.05, 0.05] })), [], 2, 160, 90)).includes('cam.rotate'));   // 한 사분면만 돈다
+  // 평평한 구석 하나(null)는 진짜 롤을 막지 않는다 — 두 사분면 이상 비면 그 걸음은 회전 0
+  assert.ok(ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [0.5, null, 0.55, 0.5] })), [], 2, 160, 90)).includes('cam.rotate'));
+  assert.ok(!ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: [0.5, null, null, 0.5] })), [], 2, 160, 90)).includes('cam.rotate'));
   assert.ok(!ids(buildCandidates(S(24, () => gm({ rot: 0.5, rotQ: null })), [], 2, 160, 90)).includes('cam.rotate'));   // 안쪽 블록이 모자라 사분면을 못 잼
 });
 test('shake → cam.shake', () => {
