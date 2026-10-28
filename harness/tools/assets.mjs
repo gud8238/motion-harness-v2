@@ -49,9 +49,9 @@ if (cmd === 'sheet') {
     spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', path.join(src, it.file), '-vf', "scale='if(gt(iw,ih),480,-2)':'if(gt(iw,ih),-2,480)'", '-frames:v', '1', '-q:v', '4', t]);
     return { img: t, label: it.file, sub: `${it.w}×${it.h} · ${it.bg}${it.bg === '단색 배경' || it.bg === '거의 단색' ? ' ' + it.bgHex : ''}` };
   });
-  await board(items, path.join(work, 'sources.png'), { cols: 5, cellW: 300, title: `${path.basename(proj)} — 소스 이미지 ${files.length}장`, note: '단색 배경 = 코드로 배경 제거 가능 · 투명 = 그대로 합성 · 복잡한 배경 = 사진 그대로(카드·화면 안) 또는 인물이면 remove-background' });
+  await board(items, path.join(work, 'sources.png'), { cols: 5, cellW: 300, title: `${path.basename(proj)} — 소스 이미지 ${files.length}장`, note: '소스는 재료 — 종류(관절 기계·캐릭터·사람·제품·유연체·장소·화면·로고)별로 움직임 단위를 나누고, 레퍼런스 매체로 다시 만든다 (GUIDE 2.5 · PLAN 소스 해부 표). 사진 그대로는 예외 사유가 있을 때만' });
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(`✔ ${path.relative(ROOT, path.join(work, 'sources.png'))} · ${files.length}장`);
+  console.log(`✔ ${path.relative(ROOT, path.join(work, 'sources.png'))} · ${files.length}장 — 다음: PLAN 소스 해부 표 (종류·움직임 단위·재구성, GUIDE 2.5)`);
   for (const it of info) console.log(`  ${it.file.padEnd(40)} ${String(it.w + '×' + it.h).padEnd(11)} ${it.bg}`);
 } else if (cmd === 'request') {
   const A = readJSON(path.join(work, 'assets.json'));

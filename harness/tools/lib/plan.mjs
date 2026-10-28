@@ -50,6 +50,40 @@ export function parseEffectTable(md) {
   return rows;
 }
 
+// 제목 줄(표 밖, "<제목>" 으로 시작 — 앞의 마크다운 #·뒤의 괄호 설명 허용) 다음의 첫 마크다운 표.
+// 반환 { found, header: [칸…], rows: [{ cells, line }] } — 구분선은 건너뛰고, 표가 끝나는 첫 비표 줄에서 멈춘다. 제목이 없으면 found false.
+export function parseTable(md, title) {
+  const lines = String(md).split(/\r?\n/);
+  const esc = String(title).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const head = new RegExp(`^(?:#+\\s*)?${esc}(?:\\s|\\(|$)`);
+  const h = lines.findIndex(l => !isRow(l) && head.test(l.trim()));
+  if (h < 0) return { found: false, header: [], rows: [] };
+  let i = h + 1;
+  while (i < lines.length && !isRow(lines[i]) && !lines[i].trim()) i++;   // 제목과 표 사이 빈 줄만 허용
+  const out = { found: true, header: [], rows: [] };
+  for (; i < lines.length && isRow(lines[i]); i++) {
+    const c = cellsOf(lines[i]);
+    if (!out.header.length) { out.header = c; continue; }
+    if (c.every(x => /^:?-+:?$/.test(x))) continue;
+    out.rows.push({ cells: c, line: i + 1 });
+  }
+  return out;
+}
+
+// brief.md 의 "## <제목>" 절 본문 줄(템플릿 안내문 "(…)" 과 빈 줄 제외, "- " 제거)
+export function briefSection(md, title) {
+  const lines = String(md).split(/\r?\n/);
+  const esc = String(title).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const s = lines.findIndex(l => new RegExp(`^##\\s+${esc}(?:[\\s(]|$)`).test(l));
+  if (s < 0) return [];
+  const out = [];
+  for (let i = s + 1; i < lines.length && !/^##\s/.test(lines[i]); i++) {
+    const t = lines[i].replace(/^[\s-]+/, '').trim();
+    if (t && !/^\(.*\)$/.test(t)) out.push(t);
+  }
+  return out;
+}
+
 // brief.md 의 "## 효과 지정" 절 본문(다음 "## " 전까지)의 비어 있지 않은 줄을 "- " 제거 후 반환한다.
 export function parseBriefEffects(md) {
   const lines = String(md).split(/\r?\n/);

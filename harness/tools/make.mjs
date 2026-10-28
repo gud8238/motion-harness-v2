@@ -2,7 +2,9 @@
 //   node make.mjs .                → (지금 연 폴더가 프로젝트) out/<폴더이름>.mp4
 //   node make.mjs 모션1            → out/모션1.mp4, out/poster.jpg, (자막 있으면) out/모션1.srt, work/qc.jpg, work/render.json
 //   node make.mjs 모션1 --draft    → out/draft.mp4 (빠른 확인용, 15fps 저화질)
-//   node make.mjs 모션1 --check    → 검사 + 게이트만 (렌더 안 함)
+//   node make.mjs 모션1 --check    → 검사 + 게이트 + 계획 검사만 (렌더 안 함)
+//   node make.mjs 모션1 --accept "사유"  → 채점표 합격선 미달을 사용자가 받아들였을 때만 (GUIDE 6절)
+// 계획 검사: 소스 해부·동작·연기·전환 표, 최종 렌더 전에는 work/review/round-N.md 채점표 합격선 (plan-check.mjs)
 // 모션 검수: 렌더 뒤 같은 감지기를 우리 영상에 돌려 효과 표의 효과가 계획한 자리에 나타나는지 확인 (work/motion-qc.json, work/qc-motion.png, --draft 는 생략, 실패해도 빌드는 유지)
 // 게이트: 장면이 ② 스타일 효과를 쓰는데 효과 표에 레퍼런스 근거가 없으면 렌더 전에 멈춘다 (gate.mjs)
 import fs from 'fs';
@@ -43,6 +45,14 @@ console.log(`  검사 통과 (경고 ${warns.length}개) ${sec()}`);
 // 2b) 게이트: ② 스타일 효과는 레퍼런스 근거 필수 (--check 에서도 검사)
 const gate = spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'gate.mjs'), proj], { stdio: 'inherit' });
 if (gate.status !== 0) die('게이트 위반 — 위 안내대로 고친 뒤 다시 실행');
+
+// 2c) 계획 검사: 소스 해부·동작·연기·전환 표 (--check·--draft 도). 최종 렌더 전에는 최신 채점표의 합격선도 — 미달이면 멈춘다
+//     루프 상한을 넘겨 사용자가 미달을 받아들였으면 --accept "<사유>" (render.json 에 남는다)
+const accept = typeof opt.accept === 'string' ? opt.accept.trim() : opt.accept ? '(사유 없음)' : '';
+const wantReview = !opt.check && !opt.draft && !accept;
+const pc = spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'plan-check.mjs'), proj, ...(wantReview ? ['--review'] : [])], { stdio: 'inherit' });
+if (pc.status !== 0) die(wantReview ? '계획 검사·채점표 합격선 미달 — GUIDE 2절 5(애니메틱 검토 루프)로 고친 뒤 다시 실행' : '계획 검사 오류 — 위 안내대로 고친 뒤 다시 실행');
+if (accept && !opt.check && !opt.draft) console.log(`⚠ 채점표 합격선 확인을 건너뜁니다 (사용자 승인: ${accept})`);
 if (opt.check) process.exit(0);
 
 // 3) 렌더 (lens.mblur ②③ 행이 있으면 4배 fps 로 렌더한 뒤 4장씩 평균해 원래 fps 로 — 초안은 생략)
@@ -90,7 +100,7 @@ if (!draft) {
     fs.writeFileSync(path.join(outDir, `${name}.srt`), nt.lines.map((l, i) => `${i + 1}\n${ts(l.t0)} --> ${ts(Math.max(l.t1 + 0.4, l.t0 + 1.5))}\n${l.sub ?? l.text}\n`).join('\n'));
   }
 }
-const report = { file: path.relative(proj, final), seconds: +dur.toFixed(2), size: `${W}x${H}`, fps: v.r_frame_rate, totalSec: Math.round((Date.now() - t0) / 1000), lufs, blackFrames: blacks, emptyRanges: flat, checkWarnings: warns.length, qcSheet: path.relative(proj, qc) };
+const report = { file: path.relative(proj, final), seconds: +dur.toFixed(2), size: `${W}x${H}`, fps: v.r_frame_rate, totalSec: Math.round((Date.now() - t0) / 1000), lufs, blackFrames: blacks, emptyRanges: flat, checkWarnings: warns.length, qcSheet: path.relative(proj, qc), ...(accept && !draft ? { acceptedBelowBar: accept } : {}) };
 writeJSON(path.join(work, draft ? 'render_draft.json' : 'render.json'), report);
 console.log('✔ 완료 ' + JSON.stringify(report));
 if (blacks.length) console.warn('⚠ 검은 화면:', blacks.map(b => b.join('–')).join(', '));

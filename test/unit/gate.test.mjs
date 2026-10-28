@@ -144,6 +144,7 @@ test('CLI runs through a symlinked tools dir (entry guard must not fail open)', 
 
 test('briefTemplate golden text', () => {
   assert.equal(briefTemplate('t', '16:9'), `<!-- harness: v2 -->
+<!-- quality: 2.1 -->
 # t — 브리프
 
 > 비워 둔 칸은 Claude가 기본값으로 채웁니다. 채팅으로 말해도 됩니다.
@@ -171,7 +172,7 @@ test('briefTemplate golden text', () => {
 - 글자색:
 
 ## 소스 이미지 활용
-- 방식: 혼합        (스타일로 다시 그리기 / 사진 그대로(배경 제거) / 3D 턴테이블(여러 각도 사진) / 혼합)
+- 방식: 자동        (자동 = 레퍼런스 매체에 맞춰 부품·레이어로 다시 만들어 움직임 / 다시 그리기 / 레이어 분리 / 3D 턴테이블(여러 각도 사진) / 사진 그대로(실물 공개용))
 - 사진 사용 권리: 있음
 - 메모: (예: 정면 사진이 메인, 학생 얼굴은 나오지 않게)
 
