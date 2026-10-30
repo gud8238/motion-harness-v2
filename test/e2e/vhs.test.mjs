@@ -1,3 +1,4 @@
+import {completePlan} from '../helpers/plan-fixture.mjs';
 // e2e: 우리 런타임 fx.vhs 를 실제 HyperFrames 로 렌더한 영상에서 fx.vhs 감지기가 찾는가 (Task 17b)
 // 장면 3개: 밝은 단색 + 어두운 글자색(0–3s) · 어두운 단색(3–6s) · 밝은 단색 + 기본 글자색 = 흰 글자·어두운 판(6–9s), seed 두 개.
 // make --draft 가 끝나면 HyperFrames 검사(대비 포함)를 통과한 것이다. MH2_E2E=1 일 때만 실행 (setup 완료 필요). 실행법: test/e2e/README.md
@@ -34,6 +35,7 @@ for (const seed of [1, 2]) test(`fx.vhs 오버레이 seed ${seed} → 검사 통
   }
   fs.writeFileSync(path.join(proj, 'work', 'PLAN.md'), `# 계획\n\n효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n|---|---|---|---|\n| fx.vhs | ③ | 사용자 지정 | ${SCENES.map(s => s[0]).join(', ')} |\n`);
   const bf = path.join(proj, 'brief.md'); fs.writeFileSync(bf, fs.readFileSync(bf, 'utf8').replace(/^- \(예: VHS 화면, 화면 채움 전환\)$/m, '- VHS 화면'));
+  completePlan(proj);
   ok(tool('make.mjs', ['.', '--draft'], proj), 'make --draft (HyperFrames 검사 포함)');
   const chk = JSON.parse(fs.readFileSync(path.join(proj, 'work', 'check.json'), 'utf8'));
   assert.deepEqual([...chk.errors, ...chk.warnings].filter(f => /contrast/.test(f.code || f.area || '')), [], '대비 검사 결과가 없어야 한다');

@@ -1,3 +1,4 @@
+import {completePlan} from '../helpers/plan-fixture.mjs';
 // e2e: 우리 런타임 lens.dof + lens.rack 을 실제 HyperFrames 로 렌더한 영상에서 lens.rack 감지기가 초점 이동을 찾는가
 // 장면 1개(3초): 먼 글자 벽(깊이 0.4)과 앞 카드(깊이 1.4), 초점 1.4 → 0.4 (0.8–1.8s, 기본 aperture 6). MH2_E2E=1 일 때만 실행. 실행법: test/e2e/README.md
 import { test, before, after } from 'node:test';
@@ -28,6 +29,7 @@ test('lens.dof + lens.rack 렌더 → 초점 이동 구간(0.8–1.8s)에 lens.r
   fs.copyFileSync(path.join(FIX, 'rack.html'), path.join(proj, 'scene', 'compositions', 'rack.html'));
   fs.writeFileSync(path.join(proj, 'work', 'PLAN.md'), '# 계획\n\n효과 표\n| 효과 id | 단계 | 근거 | 사용 위치 |\n|---|---|---|---|\n| lens.dof | ③ | 사용자 지정 | rack |\n| lens.rack | ③ | 사용자 지정 | rack |\n| cam.parallax | ③ | 사용자 지정 | rack |\n');   // cam.layer( = cam.parallax
   const bf = path.join(proj, 'brief.md'); fs.writeFileSync(bf, fs.readFileSync(bf, 'utf8').replace(/^- \(예: VHS 화면, 화면 채움 전환\)$/m, '- 배경 흐림\n- 초점 이동\n- 시차'));
+  completePlan(proj);
   ok(tool('make.mjs', ['.', '--draft'], proj), 'make --draft');
   const mp4 = path.join(proj, 'out', 'draft.mp4'), P = probe(mp4);
   const c = buildCandidates(measureSeries(mp4, P), [], P.duration), rack = c.filter(x => x.id === 'lens.rack'), show = JSON.stringify(rack);

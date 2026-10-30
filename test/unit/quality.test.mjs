@@ -104,7 +104,7 @@ test('latestRound picks the highest number', () => {
 
 test('new briefs carry the quality mark and the auto source mode', () => {
   const b = briefTemplate('x', '16:9');
-  assert.ok(b.includes(QUALITY_MARK));
+  assert.ok(b.includes('<!-- quality: 2.2 -->'));
   assert.match(b, /- 방식: 자동/);
 });
 

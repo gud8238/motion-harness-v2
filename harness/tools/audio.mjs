@@ -1,9 +1,7 @@
-// 오디오: 효과음 합성 + 기본 비트/패드 + 음악·내레이션 믹스 → scene/assets/audio/mix.wav (−14 LUFS)
+// 오디오: 효과음 합성 + Lyria/사용자 음악·내레이션 믹스 → scene/assets/audio/mix.wav (−14 LUFS)
 //   node audio.mjs 모션1          work/sound.json (+ work/narration.timing.json) 을 읽어 믹스하고 index.html 에 <audio id="mh-mix"> 를 넣는다
 // work/sound.json 예:
-// { "bed": "pulse",            // pulse(킥·하이햇·베이스·패드) | ambient(패드) | none
-//   "bpm": 120, "key": "A", "minor": true, "gain": -6,
-//   "music": "source/음악.mp3", "musicStart": 0, "musicGain": -3,   // 음악 파일이 있으면 bed 대신 사용
+// { //   "music": "source/음악.mp3", "musicStart": 0, "musicGain": -3,   // Lyria 생성 파일 또는 사용자 음악
 //   "sfxGain": 0,
 //   "events": [[0.05, "swoosh"], [2.0, "snap", -4], [8.0, "impact"]] }   // [전역초, 종류, dB]
 import fs from 'fs';
@@ -15,7 +13,6 @@ export const SR = 48000;
 const TAU = Math.PI * 2;
 const db = d => 10 ** (d / 20);
 function rng(seed = 1) { let s = seed | 0; return () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-const noteHz = (name, oct = 3) => { const i = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(name.toUpperCase()); return 440 * 2 ** ((i - 9) / 12 + (oct - 4)); };
 
 // ── 필터 ──
 function lp(x, fc) { const a = 1 - Math.exp(-TAU * fc / SR); let y = 0; for (let i = 0; i < x.length; i++) { y += a * (x[i] - y); x[i] = y; } return x; }
@@ -48,38 +45,6 @@ export const SFX = {
 };
 export const SFX_TYPES = Object.keys(SFX);
 
-// ── 기본 배경음 ──
-function saw(sec, f, harm = 10) { const b = buf(sec); for (let k = 1; k <= harm; k++) { if (f * k > 9000) break; const g = 1 / k; let p = k * 0.37; for (let i = 0; i < b.length; i++) b[i] += Math.sin(p + TAU * f * k * i / SR) * g; } return b; }
-function bed(kind, dur, { bpm = 112, key = 'A', minor = true } = {}) {
-  const L = buf(dur), R = buf(dur);
-  if (kind === 'none' || !kind) return [L, R];
-  const root = noteHz(key, 2), beat = 60 / bpm, bar = beat * 4;
-  const prog = minor ? [0, 8, 3, 10] : [0, 5, 9, 7];               // i–VI–III–VII  /  I–IV–vi–V (반음)
-  const nBars = Math.ceil(dur / bar);
-  for (let b = 0; b < nBars; b++) {
-    const chordRoot = root * 2 ** (prog[Math.floor(b / 2) % 4] / 12), t0 = Math.round(b * bar * SR);
-    // 패드: 루트·3도·5도, 부드러운 어택
-    const pad = buf(bar + .6);
-    const step = prog[Math.floor(b / 2) % 4], th = minor ? (step === 0 ? 3 : 4) : (step === 9 ? 3 : 4);   // 단조는 i만 단3도, 장조는 vi만 단3도
-    for (const [st, g] of [[12, .5], [12 + th, .35], [19, .35]]) add(pad, saw(bar + .6, chordRoot * 2 ** (st / 12), 8), g);
-    lp(pad, kind === 'ambient' ? 900 : 1400);
-    for (let i = 0; i < pad.length; i++) pad[i] *= Math.min(1, i / (SR * .5)) * Math.min(1, (pad.length - i) / (SR * .6));
-    add(L, pad, .05, t0); add(R, pad, .05, t0 + 90);
-    if (kind === 'pulse') {
-      for (let q = 0; q < 4; q++) {
-        const tb = t0 + Math.round(q * beat * SR);
-        const k = env(sine(.35, 120, 45), .002, .18, 4); add(L, k, .55, tb); add(R, k, .55, tb);                     // 킥
-        const bs = env(sine(beat * .9, chordRoot), .01, beat * .5, 3); add(bs, env(sine(beat * .9, chordRoot * 2), .01, beat * .3, 3), .3);
-        add(L, bs, .22, tb); add(R, bs, .22, tb);                                                                        // 베이스
-        const h = env(hp(noise(Math.round(.05 * SR), b * 8 + q), 7000), .0005, .02, 6), th = tb + Math.round(beat * .5 * SR);
-        add(L, h, .12, th); add(R, h, .09, th);                                                                         // 하이햇(엇박)
-      }
-    }
-  }
-  const fo = Math.round(1.2 * SR); for (let i = 0; i < L.length; i++) { const g = Math.min(1, i / (SR * .3), (L.length - i) / fo); L[i] *= g; R[i] *= g; }
-  return [L, R];
-}
-
 // ── 파일 디코딩 (ffmpeg → f32 stereo 48k) ──
 function decode(file, start = 0) {
   const r = ffmpeg(['-ss', String(start), '-i', file, '-ac', '2', '-ar', String(SR), '-f', 'f32le', '-'], { encoding: 'buffer' });
@@ -99,6 +64,16 @@ function writeWav(file, L, R) {
   fs.writeFileSync(file, b);
 }
 
+// Explicit gain automation in global seconds; silence uses gainDb=-120.
+export function musicEnvelope(t, segments) {
+  let gain=1;
+  for(const s of segments) {
+    if(!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.end<=s.start||!Number.isFinite(s.fromDb)||!Number.isFinite(s.toDb)) throw new Error('음악 envelope 형식 오류');
+    if(t>=s.start && t<=s.end) gain*=db(s.fromDb+(s.toDb-s.fromDb)*(t-s.start)/(s.end-s.start));
+  }
+  return gain;
+}
+
 // 메인: EV(효과음 이벤트), AUDIO(설정), DUR, narration(타이밍 json) → wav 경로
 export function buildAudio({ proj, EV = [], AUDIO = {}, DUR, narration = null, out }) {
   const n = Math.round(DUR * SR), L = new Float32Array(n), R = new Float32Array(n);
@@ -109,10 +84,11 @@ export function buildAudio({ proj, EV = [], AUDIO = {}, DUR, narration = null, o
     const f = path.resolve(proj, AUDIO.music);
     if (!fs.existsSync(f)) throw new Error('음악 파일 없음: ' + f);
     [musL, musR] = decode(f, AUDIO.musicStart || 0); report.music = path.basename(f);
+    if(musL.length < n-SR*.1 && !AUDIO.allowShortMusic) throw new Error('음악 길이가 영상보다 짧습니다. 구간 편집/재생성 또는 allowShortMusic 명시 필요');
     const fo = Math.round((AUDIO.musicFade ?? 1.5) * SR);
-    for (let i = 0; i < Math.min(n, musL.length); i++) { const g = Math.min(1, (n - i) / fo, i / (SR * .05)); musL[i] *= g; musR[i] *= g; }
+    for (let i = 0; i < Math.min(n, musL.length); i++) { const g = Math.min(1, (n - i) / fo, i / Math.max(1, SR * (AUDIO.musicFadeIn ?? .05))); const envelope = musicEnvelope(i / SR, AUDIO.envelopes || []); musL[i] *= g * envelope; musR[i] *= g * envelope; }
   } else if (AUDIO.bed && AUDIO.bed !== 'none') {
-    [musL, musR] = bed(AUDIO.bed, DUR, AUDIO); report.bed = AUDIO.bed;
+    throw new Error('합성 배경음은 제거되었습니다. Lyria 음악 또는 사용자 음악 파일을 지정하세요. 이전 합성음은 archive/v2.1에서 사용 가능합니다.');
   }
   // 2) 내레이션
   let vL = null, vR = null;
@@ -154,7 +130,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   let idx = fs.readFileSync(idxFile, 'utf8');
   const DUR = +(idx.match(/id="root"[^>]*data-duration="([\d.]+)"/) || [])[1];
   if (!(DUR > 0)) die('index.html 의 root data-duration 을 읽지 못했습니다 (장면을 먼저 추가).');
-  const S = readJSON(path.join(proj, 'work', 'sound.json'), { bed: 'pulse', bpm: 120, events: [] });
+  const S = readJSON(path.join(proj, 'work', 'sound.json'), { events: [] });
   const narration = readJSON(path.join(proj, 'work', 'narration.timing.json'));
   const EV = (S.events || []).map(e => Array.isArray(e) ? { t: e[0], type: e[1], gain: e[2] ?? 0 } : e);
   const dir = path.join(proj, 'scene', 'assets', 'audio'); fs.mkdirSync(dir, { recursive: true });

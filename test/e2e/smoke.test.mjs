@@ -1,3 +1,4 @@
+import {completePlan} from '../helpers/plan-fixture.mjs';
 // e2e 스모크: 실제 HyperFrames 로 게이트·초안 렌더·순서 바꾼 프레임 결정성·v1 프로젝트 호환을 확인한다.
 // MH2_E2E=1 일 때만 실행 (setup 완료 필요, 설치 폴더는 MH_DATA 또는 ~/.motion-harness2). 실행법: test/e2e/README.md
 import { test, before, after } from 'node:test';
@@ -41,6 +42,7 @@ test('1. 근거 없는 ② 효과 표 → make --check 가 게이트로 실패(�
     ['cam.onetake', '②', 'b 0–4.5s (ev_cam-onetake_0.00.png)', 'st1 b1'],                // 근거 이미지가 없다
     ['trans.fill', '②', 'b 6.67–7.42s (ev_trans-fill_6.67.png)', 'st1 b2'],
   ]));
+  completePlan(proj);
   const r = tool('make.mjs', ['.', '--check'], proj);
   assert.equal(r.status, 1, r.out);
   assert.match(r.out, /검사 통과/, 'HyperFrames 검사가 먼저 통과해야 게이트 실패가 의미 있다:\n' + r.out);
@@ -54,6 +56,7 @@ test('2. ③ 사용자 지정 + brief 효과 지정 → make --draft 성공, out
   write(path.join(proj, 'work', 'PLAN.md'), TABLE([['cam.onetake', '③', '사용자 지정', 'st1 b1'], ['trans.fill', '③', '사용자 지정', 'st1 b2']]));
   const bf = path.join(proj, 'brief.md');
   write(bf, fs.readFileSync(bf, 'utf8').replace(/^- \(예: VHS 화면, 화면 채움 전환\)$/m, '- 원테이크\n- 화면 채움'));
+  completePlan(proj);
   const r = tool('make.mjs', ['.', '--draft'], proj);
   ok(r, 'make --draft');
   assert.match(r.out, /✔ 게이트 통과/);

@@ -8,6 +8,7 @@
 // 모션 검수: 렌더 뒤 같은 감지기를 우리 영상에 돌려 효과 표의 효과가 계획한 자리에 나타나는지 확인 (work/motion-qc.json, work/qc-motion.png, --draft 는 생략, 실패해도 빌드는 유지)
 // 게이트: 장면이 ② 스타일 효과를 쓰는데 효과 표에 레퍼런스 근거가 없으면 렌더 전에 멈춘다 (gate.mjs)
 import fs from 'fs';
+import {isV22, checkFinal, snapshot, validateAssets, fileHash, read as readWorkflow} from './lib/workflow.mjs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { mblurArgs, mblurMixArgs, wantsMotionBlur, rootFps, checkFindings } from './lib/render.mjs';
@@ -19,11 +20,16 @@ const sceneDir = path.join(proj, 'scene'), work = path.join(proj, 'work'), outDi
 fs.mkdirSync(outDir, { recursive: true });
 const t0 = Date.now(), sec = () => ((Date.now() - t0) / 1000).toFixed(0) + 's';
 
+const modern = isV22(proj);
+if(modern) {
+  const missing=validateAssets(proj,readWorkflow(path.join(work,'assets.json')));
+  if(missing.length) die(missing.join('\n'));
+}
 // 0) source → scene/assets/source 동기화 (바뀐 파일만)
 fs.mkdirSync(path.join(sceneDir, 'assets', 'source'), { recursive: true });
 for (const f of fs.existsSync(path.join(proj, 'source')) ? fs.readdirSync(path.join(proj, 'source')) : []) {
   const s = path.join(proj, 'source', f), d = path.join(sceneDir, 'assets', 'source', f);
-  if (fs.statSync(s).isFile() && (!fs.existsSync(d) || fs.statSync(d).mtimeMs < fs.statSync(s).mtimeMs)) fs.copyFileSync(s, d);
+  if (fs.statSync(s).isFile() && (!fs.existsSync(d) || fileHash(d) !== fileHash(s))) fs.copyFileSync(s, d);
 }
 
 // 1) 오디오
@@ -49,10 +55,11 @@ if (gate.status !== 0) die('게이트 위반 — 위 안내대로 고친 뒤 다
 // 2c) 계획 검사: 소스 해부·동작·연기·전환 표 (--check·--draft 도). 최종 렌더 전에는 최신 채점표의 합격선도 — 미달이면 멈춘다
 //     루프 상한을 넘겨 사용자가 미달을 받아들였으면 --accept "<사유>" (render.json 에 남는다)
 const accept = typeof opt.accept === 'string' ? opt.accept.trim() : opt.accept ? '(사유 없음)' : '';
-const wantReview = !opt.check && !opt.draft && !accept;
+if(modern && !opt.check && !opt.draft) {const issues=checkFinal(proj);if(issues.length)die(issues.join('\n'));}
+const wantReview = !modern && !opt.check && !opt.draft && !accept;
 const pc = spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'plan-check.mjs'), proj, ...(wantReview ? ['--review'] : [])], { stdio: 'inherit' });
 if (pc.status !== 0) die(wantReview ? '계획 검사·채점표 합격선 미달 — GUIDE 2절 5(애니메틱 검토 루프)로 고친 뒤 다시 실행' : '계획 검사 오류 — 위 안내대로 고친 뒤 다시 실행');
-if (accept && !opt.check && !opt.draft) console.log(`⚠ 채점표 합격선 확인을 건너뜁니다 (사용자 승인: ${accept})`);
+if (!modern && accept && !opt.check && !opt.draft) console.log(`⚠ 채점표 합격선 확인을 건너뜁니다 (사용자 승인: ${accept})`);
 if (opt.check) process.exit(0);
 
 // 3) 렌더 (lens.mblur ②③ 행이 있으면 4배 fps 로 렌더한 뒤 4장씩 평균해 원래 fps 로 — 초안은 생략)
@@ -79,8 +86,13 @@ const idx = fs.readFileSync(path.join(sceneDir, 'index.html'), 'utf8');
 const sc = hosts(idx).filter(h => h.track !== 'captions').sort((a, b) => a.start - b.start);
 const pr = JSON.parse(run('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height,r_frame_rate,codec_type', '-show_entries', 'format=duration', '-of', 'json', final]).stdout);
 const v = pr.streams.find(s => s.codec_type === 'video'), dur = +pr.format.duration, W = v.width, H = v.height;
-const cols = W >= H ? 6 : 8, rows = Math.ceil(Math.ceil(dur) / cols), qc = path.join(work, draft ? 'qc_draft.jpg' : 'qc.jpg');
-ffmpeg(['-i', final, '-vf', `fps=1,scale=${W >= H ? 320 : 180}:-2,tile=${cols}x${rows}:padding=4:color=0x16181c`, '-frames:v', '1', '-q:v', '3', qc]);
+const cols = W >= H ? 6 : 8, qc = path.join(work, draft ? 'qc_draft.jpg' : 'qc.jpg'), qcPages=[];
+for(let start=0; start<dur; start+=30) {
+  const length=Math.min(30,dur-start), rows=Math.ceil(Math.ceil(length)/cols);
+  const page=start===0?qc:qc.replace('.jpg',`_${Math.floor(start/30)+1}.jpg`);
+  ffmpeg(['-ss',String(start),'-i',final,'-t',String(length),'-vf',`fps=1,scale=${W>=H?320:180}:-2,tile=${cols}x${rows}:padding=4:color=0x16181c`,'-frames:v','1','-q:v','3',page]);
+  qcPages.push({start,end:start+length,file:path.relative(proj,page)});
+}
 const bd = ffmpeg(['-i', final, '-vf', 'blackdetect=d=0.15:pix_th=0.06', '-an', '-f', 'null', '-'], { loglevel: 'info', allowFail: true });
 const blacks = [...(bd.stderr || '').matchAll(/black_start:([\d.]+) black_end:([\d.]+)/g)].map(m => [+m[1], +m[2]]);
 let lufs = null;
@@ -97,11 +109,12 @@ if (!draft) {
   const nt = readJSON(path.join(work, 'narration.timing.json'));
   if (nt?.lines?.length) {
     const ts = s => { const ms = Math.round(s * 1000); return `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms / 60000) % 60).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`; };
-    fs.writeFileSync(path.join(outDir, `${name}.srt`), nt.lines.map((l, i) => `${i + 1}\n${ts(l.t0)} --> ${ts(Math.max(l.t1 + 0.4, l.t0 + 1.5))}\n${l.sub ?? l.text}\n`).join('\n'));
+    fs.writeFileSync(path.join(outDir, `${name}.srt`), nt.lines.map((l, i) => `${i + 1}\n${ts(l.t0)} --> ${ts(Math.min(dur, nt.lines[i+1]?.t0 ?? dur, Math.max(l.t1 + 0.4, l.t0 + 1.5)))}\n${l.sub ?? l.text}\n`).join('\n'));
   }
 }
-const report = { file: path.relative(proj, final), seconds: +dur.toFixed(2), size: `${W}x${H}`, fps: v.r_frame_rate, totalSec: Math.round((Date.now() - t0) / 1000), lufs, blackFrames: blacks, emptyRanges: flat, checkWarnings: warns.length, qcSheet: path.relative(proj, qc), ...(accept && !draft ? { acceptedBelowBar: accept } : {}) };
+const report = { file: path.relative(proj, final), seconds: +dur.toFixed(2), size: `${W}x${H}`, fps: v.r_frame_rate, totalSec: Math.round((Date.now() - t0) / 1000), lufs, blackFrames: blacks, emptyRanges: flat, checkWarnings: warns.length, qcSheet: path.relative(proj, qc), qcPages, ...(accept && !draft ? { acceptedBelowBar: accept } : {}) };
 writeJSON(path.join(work, draft ? 'render_draft.json' : 'render.json'), report);
+if(modern && draft) writeJSON(path.join(work,'draft-state.json'),snapshot(proj));
 console.log('✔ 완료 ' + JSON.stringify(report));
 if (blacks.length) console.warn('⚠ 검은 화면:', blacks.map(b => b.join('–')).join(', '));
 if (flat.length) console.warn('⚠ 내용이 거의 없는 구간(초):', flat.map(x => x.join('–')).join(', '), '— 의도한 여백이 아니면 board.mjs --times 로 확인');

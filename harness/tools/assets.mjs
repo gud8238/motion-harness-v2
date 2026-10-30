@@ -49,7 +49,7 @@ if (cmd === 'sheet') {
     spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', path.join(src, it.file), '-vf', "scale='if(gt(iw,ih),480,-2)':'if(gt(iw,ih),-2,480)'", '-frames:v', '1', '-q:v', '4', t]);
     return { img: t, label: it.file, sub: `${it.w}×${it.h} · ${it.bg}${it.bg === '단색 배경' || it.bg === '거의 단색' ? ' ' + it.bgHex : ''}` };
   });
-  await board(items, path.join(work, 'sources.png'), { cols: 5, cellW: 300, title: `${path.basename(proj)} — 소스 이미지 ${files.length}장`, note: '소스는 재료 — 종류(관절 기계·캐릭터·사람·제품·유연체·장소·화면·로고)별로 움직임 단위를 나누고, 레퍼런스 매체로 다시 만든다 (GUIDE 2.5 · PLAN 소스 해부 표). 사진 그대로는 예외 사유가 있을 때만' });
+  await board(items, path.join(work, 'sources.png'), { cols: 5, cellW: 300, title: `${path.basename(proj)} — 소스 이미지 ${files.length}장`, note: '소스는 재료 — 종류(관절 기계·캐릭터·사람·제품·유연체·장소·화면·로고)별로 움직임 단위를 나누고, 레퍼런스와 맞는 원본을 활용하고, 불일치하면 고품질 재제작을 요청한다 (GUIDE 2.5)' });
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`✔ ${path.relative(ROOT, path.join(work, 'sources.png'))} · ${files.length}장 — 다음: PLAN 소스 해부 표 (종류·움직임 단위·재구성, GUIDE 2.5)`);
   for (const it of info) console.log(`  ${it.file.padEnd(40)} ${String(it.w + '×' + it.h).padEnd(11)} ${it.bg}`);
@@ -60,7 +60,7 @@ if (cmd === 'sheet') {
   const block = (it, n) => `### ${n}. \`${it.file}\` — ${it.role}${it.required === false ? ' (선택)' : ''}
 - **쓰이는 장면**: ${(it.scenes || []).join(', ')}
 - **왜 필요한가**: ${it.why}
-- **규격**: ${it.size || '자유'} (가로:세로 ${it.size ? ratio(it.size) : '-'})${it.transparent ? ' · **투명 배경 PNG** (안 되면 단색 배경 — 하네스가 제거)' : ''}
+- **규격**: ${it.size || '자유'} (가로:세로 ${it.size ? ratio(it.size) : '-'})${it.transparent ? ' · **투명 배경 PNG**' : ''}
 ${it.ref ? `- **스타일 참고로 함께 첨부**: \`${it.ref}\` (레퍼런스 프레임)\n` : ''}${it.attach?.length ? `- **일관성 참고로 함께 첨부**: ${it.attach.map(a => '`' + a + '`').join(', ')}\n` : ''}
 **생성 프롬프트 (영문 — 이미지 생성 도구에 그대로 붙여넣기)**
 \`\`\`
@@ -77,7 +77,7 @@ ${A.items.map((it, i) => `| ${i + 1} | \`${it.file}\` | ${it.role} | ${(it.scene
 
 ${[...req, ...opt].map((it, i) => block(it, i + 1)).join('\n')}
 ${A.substitutes ? `---\n**이미지 없이 코드로 재현하는 요소**: ${A.substitutes}\n` : ''}
-**팁**: 같은 도구·같은 대화에서 연속으로 만들면 화풍이 맞습니다. 생성 결과가 규격과 조금 달라도 괜찮습니다(하네스가 맞춰 자름). 못 만든 이미지는 넣지 않아도 됩니다 — 그 부분은 코드로 대체합니다.
+**팁**: 같은 도구·같은 대화에서 연속으로 만들면 화풍이 맞습니다. 제공된 이미지는 스타일·잘림·투명도·해상도를 확인합니다. 어려운 소스는 재제작 또는 합의한 대안을 결정하며, 저품질 코드 그림으로 자동 대체하지 않습니다.
 `;
   fs.writeFileSync(path.join(work, 'ASSETS.md'), md);
   console.log(`✔ ${path.relative(ROOT, path.join(work, 'ASSETS.md'))} · 필수 ${req.length} · 선택 ${opt.length}`);
@@ -90,13 +90,13 @@ ${A.substitutes ? `---\n**이미지 없이 코드로 재현하는 요소**: ${A.
     let hit = files[lower.indexOf(it.file.toLowerCase())] || files.find(f => f.toLowerCase().replace(/\.[^.]+$/, '') === stem);
     if (!hit) { it.status = 'missing'; it.found = null; continue; }
     const s = inspect(path.join(src, hit)), notes = [];
-    if (it.size) { const [w, h] = it.size.split('x').map(Number); if (Math.abs(s.aspect - w / h) / (w / h) > 0.12) notes.push(`비율 ${s.w}×${s.h} (요청 ${it.size}) — 잘라 맞춤`); }
+    if (it.size) { const [w, h] = it.size.split('x').map(Number); if (Math.abs(s.aspect - w / h) / (w / h) > 0.12) notes.push(`비율 ${s.w}×${s.h} (요청 ${it.size}) — 잘림 시각 확인 필요`); }
     if (it.transparent && !s.alpha && s.bg === '복잡한 배경') notes.push('투명/단색 배경이 아님 — 배경 제거가 어려움');
-    it.status = 'ok'; it.found = hit; it.notes = notes;
+    it.status = 'received'; it.found = hit; it.notes = notes;
   }
   const extra = files.filter(f => !known.has(f) && !A.items.some(i => i.found === f));
   writeJSON(path.join(work, 'assets.json'), A);
-  for (const it of A.items) console.log(`${it.status === 'ok' ? '✔' : it.required === false ? '·' : '✖'} ${it.file.padEnd(34)} ${it.status === 'ok' ? '받음' + (it.found !== it.file ? ` (${it.found})` : '') : it.required === false ? '없음(선택 — 코드로 대체)' : '없음 — 코드로 대체'}${it.notes?.length ? ' · ' + it.notes.join(' · ') : ''}`);
+  for (const it of A.items) console.log(`${it.status === 'received' ? '✔' : it.required === false ? '·' : '✖'} ${it.file.padEnd(34)} ${it.status === 'received' ? '받음' + (it.found !== it.file ? ` (${it.found})` : '') : it.required === false ? '없음(선택)' : '없음 — 요청/재제작 대기'}${it.notes?.length ? ' · ' + it.notes.join(' · ') : ''}`);
   if (extra.length) console.log('  요청 외 새 이미지: ' + extra.join(', '));
   const got = A.items.filter(i => i.status === 'ok').length;
   console.log(`→ ${got}/${A.items.length} 받음. 새 이미지만 확인하려면 sheet 를 다시 실행.`);

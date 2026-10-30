@@ -6,6 +6,14 @@ import { spawnSync } from 'child_process';
 import { DATA, LIB, HARNESS, CONFIG, parseArgs, has, ensureDir, hf, winQuote } from './_common.mjs';
 
 const { opt } = parseArgs();
+if (opt.music || opt['music-status'] || opt['music-delete']) {
+  const action = opt.music ? 'setup' : opt['music-delete'] ? 'delete' : 'status';
+  let python;
+  for (const name of ['python3', 'python', 'py']) if (spawnSync(name, ['--version'], {stdio:'ignore'}).status === 0) { python=name; break; }
+  if (!python) { console.error('Python 3 + keyring 필요: python -m pip install keyring'); process.exit(1); }
+  const r=spawnSync(python,[path.join(HARNESS,'tools','credentials.py'),action],{stdio:'inherit'});
+  process.exit(r.status ?? 1);
+}
 const WIN = process.platform === 'win32', MAC = process.platform === 'darwin';
 const sh = (cmd, args, cwd = DATA) => spawnSync(cmd, args.map(a => winQuote(a, WIN)), { stdio: 'inherit', shell: WIN, cwd });   // 사용자 폴더에 공백이 있어도
 const ok = m => console.log('  ✔ ' + m), warn = m => console.log('  ⚠ ' + m);
@@ -81,3 +89,5 @@ console.log('\n[6/6] 레퍼런스 카탈로그');
 spawnSync(process.execPath, [path.join(HARNESS, 'tools', 'refs.mjs'), 'catalog'], { stdio: 'inherit' });
 fs.writeFileSync(path.join(DATA, 'installed.json'), JSON.stringify({ at: new Date().toISOString(), config: CONFIG }, null, 2));
 console.log('\n완료. 영상 작업 폴더에서 /motion-harness2:mv-new 모션1 로 시작하세요.');
+
+console.log('음악 연결: 사용자 본인 터미널에서 node <플러그인>/harness/tools/setup.mjs --music (Python keyring 필요). 키는 채팅에 입력하지 마세요. 나중에 설정해도 영상 초안 작업은 가능합니다.');

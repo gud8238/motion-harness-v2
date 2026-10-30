@@ -144,7 +144,7 @@ test('CLI runs through a symlinked tools dir (entry guard must not fail open)', 
 
 test('briefTemplate golden text', () => {
   assert.equal(briefTemplate('t', '16:9'), `<!-- harness: v2 -->
-<!-- quality: 2.1 -->
+<!-- quality: 2.2 -->
 # t — 브리프
 
 > 비워 둔 칸은 Claude가 기본값으로 채웁니다. 채팅으로 말해도 됩니다.
@@ -164,7 +164,7 @@ test('briefTemplate golden text', () => {
 - 화면: 16:9      (16:9 / 9:16 / 1:1 / 4:5)
 - 내레이션: 없음    (없음 / 한국어 TTS 여성 / 한국어 TTS 남성 / 직접 녹음 → source/ 에 파일)
 - 자막: 내레이션이 있으면 자동
-- 음악: 기본        (기본 = 효과음 + 간단한 비트 / 없음 / source/ 의 음악 파일명)
+- 음악: Lyria       (분위기·스타일·BPM 확인 후 생성 / 없음 / source/ 음악 파일)
 
 ## 색 지정 (선택 — 비우면 레퍼런스 팔레트를 따름)
 - 배경: (예: 남색 #1B2A4A / 그라데이션 / 종이 질감 / 3D 공간)
@@ -172,7 +172,7 @@ test('briefTemplate golden text', () => {
 - 글자색:
 
 ## 소스 이미지 활용
-- 방식: 자동        (자동 = 레퍼런스 매체에 맞춰 부품·레이어로 다시 만들어 움직임 / 다시 그리기 / 레이어 분리 / 3D 턴테이블(여러 각도 사진) / 사진 그대로(실물 공개용))
+- 방식: 자동        (자동 = 맞는 원본 활용, 불일치하면 ASSETS로 고품질 재제작 요청 / 다시 그리기 / 레이어 분리 / 3D 턴테이블(여러 각도 사진) / 사진 그대로(실물 공개용))
 - 사진 사용 권리: 있음
 - 메모: (예: 정면 사진이 메인, 학생 얼굴은 나오지 않게)
 

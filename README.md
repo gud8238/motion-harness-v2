@@ -1,111 +1,86 @@
-# Motion Harness 2
+# Motion Harness 2 — v2.2
 
-레퍼런스 영상(mp4·프롬프트·라이브러리 스타일)과 내 이미지(여러 각도 사진)로 **레퍼런스 스타일이 빠짐없이 반영된** 짧은 모션그래픽 영상을 만드는 Claude Code 플러그인. [motion-harness v1](https://github.com/gud8238/motion-harness-v1) 의 모든 기능에 **움직임의 자연스러움**(캐릭터 연기·원테이크 카메라·모핑·렌즈 효과)을 더한 v2 입니다.
+Claude Code에서 레퍼런스의 매체·타이포·리듬·연기·전환을 분석해 사용자 주제의 모션그래픽을 만드는 플러그인입니다. HyperFrames + GSAP/Canvas/Three.js를 사용하며, Blender는 필요하지 않습니다.
 
-- **렌더 엔진**: [HyperFrames](https://github.com/heygen-com/hyperframes) (HTML → MP4, 프레임 단위 결정적 렌더)
-- **장면 4종**: DOM/GSAP(타이포·레이아웃) · 캔버스(절차적 그래픽·질감·사진 합성) · three.js(멀티뷰 사진 3D 턴테이블) · **무대(stage)**(큰 월드 위 원테이크 카메라·세트·캐릭터) — 한 영상 안에서 섞어 씀
-- **레퍼런스 라이브러리**: [lemo-opuscar](https://github.com/lemomo-ai/lemo-opuscar) 59개 스타일 · [animate](https://github.com/cth9191/animate) 7개 스타일 · [awesome-opus-5.5-video](https://github.com/zhuyansen/awesome-opus-5.5-video) / [jasonzhu.ai](https://jasonzhu.ai/en/prompts/claude-opus-5-5) 2,143개 작품
-- **품질 우선**(2.1): 10개 항목 채점표의 합격선(핵심 5개 항목 5점, 나머지 4.5 이상, 비교 기준 영상이 있으면 항목마다 +1)을 넘을 때까지 애니메틱 검토 루프를 돈다. 소스 이미지는 붙이는 완성품이 아니라 부품·레이어로 다시 만들어 움직이는 재료
+## 설치·업데이트
 
-## v2 에서 새로 생긴 것
-
-| 기능 | 하는 일 |
-|---|---|
-| **효과 근거표** | `analyze-ref` 가 레퍼런스에서 카메라 이동·심도·모션 블러·채움 전환·모핑·VHS 등의 후보를 찾아 `evidence.png` 한 장(구간 프레임 strip)으로 보여 줌. 놓친 효과는 `analyze-ref strip` 으로 근거 추가 |
-| **3단계 게이트** | ① 기본기(자연스러운 움직임)는 항상 · ② 스타일 효과는 레퍼런스 근거 이미지가 있을 때만 · ③ brief.md "효과 지정"에 적은 효과는 근거 없이. 제작 전에 `gate` 가 장면 코드를 검사해 근거 없는 효과를 막음 |
-| **① 기본기 런타임** | 예비동작·오버슈트·안착(`MH.move`), 따라가기(`MH.follow`), 스프링, 탄도·튕김 물리, 결정적 시뮬레이션. 강도는 레퍼런스에서 측정 |
-| **2D 캐릭터** | 단순한 캐릭터는 코드로 그리고, 일러스트형은 파츠 시트(생성 프롬프트 제공)로 — 깜빡임·시선·표정·점프·늘어남·걷기·말하기, 장면을 넘어 같은 캐릭터 |
-| **2D 카메라·연결 전환** | 팬·줌·회전·흔들림·패럴랙스, 화면 채움·줌 통과·휙 넘김·매치 컷 |
-| **렌즈** | 심도·초점 이동·요소 스미어, 렌더 단계 모션 블러(렌더 시간 약 4배) |
-| **특수효과·모핑** | VHS·글리치·시간 되감기, 도형·글자 윤곽 모핑(예: 두 눈 → 로고의 `oo`) |
-| **모션 검수** | 렌더 뒤 같은 감지기로 효과가 계획한 자리에 나왔는지 ✔/✗, 딱딱한 움직임 경고, 레퍼런스와 위아래로 붙인 `qc-motion.png` |
-
-### 2.1 품질 우선 개편
-
-| 기능 | 하는 일 |
-|---|---|
-| **소스 해부** | 소스마다 종류(관절 기계·캐릭터·사람·제품·유연체·장소·화면·로고)·움직임 단위·재구성 방식을 PLAN 소스 해부 표에. 레퍼런스 매체로 다시 만드는 것이 기본, 사진 그대로는 예외 사유가 있을 때만 |
-| **동작·연기·전환 표** | 브리프 동사마다 주체가 직접 하는 동작, 레퍼런스 연기 → 우리 피사체, 장면 경계마다 이어주는 요소. 라벨·자막만으로 때운 동작은 오류 |
-| **계획 검사** | `plan-check` 가 위 표를 검사하고(make `--check`·`--draft` 도), 최종 렌더 전에는 `work/review/round-N.md` 채점표의 합격선을 확인해 미달이면 멈춤 |
-| **애니메틱 채점 루프** | 스토리보드 + 장면별 연속 프레임(`board --strip`) + 초안 영상(`make --draft`)으로 10개 항목 채점 → 미달 항목만 고쳐 다시(계획 최대 3회, 제작 최대 2회) |
-
-brief.md 에 `<!-- quality: 2.1 -->` 표시가 있는 프로젝트(2.1 의 mv-new 로 만든 프로젝트)에만 계획 검사가 적용됩니다. 이전 프로젝트에도 적용하려면 brief.md 맨 위에 그 줄을 넣으세요. 이미지가 부족하면 목록·생성 프롬프트를 주고 기다리는 단계는 그대로입니다.
-
-## 설치 (PC에서 한 번)
-
-필요: **Node 22 이상**, **ffmpeg**, **git** (선택: 한국어 TTS용 Python + `pip install edge-tts`)
+Node 22+, ffmpeg, git가 필요합니다. 음악 연결에는 Python 3 + `keyring`, OS 보안 저장소가 추가로 필요합니다.
 
 ```bash
 claude plugin marketplace add gud8238/motion-harness-v2
 claude plugin install motion-harness2@motion-harness2
 ```
-그다음 Claude Code 안에서 한 번:
+
+기존 설치 업데이트:
+```bash
+claude plugin marketplace update motion-harness2
+claude plugin update motion-harness2@motion-harness2
 ```
-/motion-harness2:mv-setup
+Claude Code를 재시작하고 `/motion-harness2:mv-setup`을 실행하세요. 일반 도구는 `~/.motion-harness2`에 설치됩니다. 음악 키 설정은 사용자의 본인 터미널에서 안내된 실제 플러그인 경로로 실행합니다.
+
+```bash
+python -m pip install keyring
+node "<플러그인 경로>/harness/tools/setup.mjs" --music
 ```
-설치물(Node 패키지·모핑 라이브러리·레퍼런스 라이브러리·한글 폰트)은 `~/.motion-harness2` 에 들어갑니다 (Chromium 별도). 모든 영상 프로젝트가 같이 쓰는 도구 저장소라 작업 폴더가 아닌 곳에 설치되는 것이 정상이고, 컴퓨터마다 한 번이면 됩니다.
-업데이트: `claude plugin update motion-harness2@motion-harness2` 후 `/motion-harness2:mv-setup --update`
+키는 화면에 표시되지 않는 입력으로 받으며 macOS Keychain / Windows Credential Manager / Linux Secret Service에 저장합니다. 채팅에 키를 붙여넣지 마세요. 프로젝트·코드·Markdown·평문 설정 파일에는 저장하지 않습니다. 지원되는 보안 저장소가 없으면 평문 저장으로 대체하지 않습니다. `--music-status`는 설정 유무만 확인하고, `--music-delete`는 저장된 키를 삭제합니다. 설정 과정은 Google API 연결을 확인하며, 실제 Lyria 모델 권한·결제·생성은 음악 제작 시 확인합니다.
 
-**v1 과 나란히 설치할 수 있습니다.** 플러그인 이름(`motion-harness` / `motion-harness2`)·설치 폴더(`~/.motion-harness` / `~/.motion-harness2`)·명령어 접두사가 달라 서로 덮어쓰지 않습니다. 새 프로젝트의 `brief.md` 맨 위에는 `<!-- harness: v2 -->` 가 들어가 v2 프로젝트임을 표시하고(자연어 요청 때 v2 스킬을 고르는 기준), v1 프로젝트(효과 표 없음)도 v2 에서 그대로 렌더됩니다.
+**v1 과 나란히 설치할 수 있습니다.** v1은 `motion-harness`, v2는 `motion-harness2` 이름을 사용합니다.
 
-## 사용
-
-**영상 하나 = 폴더 하나.** 예를 들어 바탕화면에 폴더를 만들고 레퍼런스와 이미지를 미리 넣어 둡니다.
-
-```
-바탕화면/motion-video2/      ← 이 폴더를 Claude Code 로 연다
-  ref/      레퍼런스 mp4 (·이미지·프롬프트)
-  source/   영상에 쓸 이미지 (여러 각도 사진, 음악·녹음도 가능)
-```
-
-명령어 이름은 v1 과 같고 **접두사만 다릅니다**.
+## 단계별 역할
 
 | v2 | v1 | 하는 일 |
 |---|---|---|
-| `/motion-harness2:mv-new` | `/motion-harness:mv-new` | 지금 폴더를 프로젝트로 준비 — ref/·source/ 확인, `brief.md`(효과 지정 칸 포함)·`scene/`·`work/`·`out/` 생성, source 동기화. 세로 영상은 `--size 9:16` (1:1, 4:5 도 가능) |
-| `/motion-harness2:mv-refs` | `/motion-harness:mv-refs` | 레퍼런스가 없을 때: 주제·이미지에 맞는 후보 4~6개를 영상 재생 페이지로 추천 |
-| `/motion-harness2:mv-plan` | `/motion-harness:mv-plan` | 레퍼런스 측정 → **근거표 확정** → **소스 점검**(부족한 이미지·캐릭터 파츠 시트가 있으면 목록·생성 프롬프트를 주고 "이미지 추가 완료"를 기다림) → 스타일 DNA + 효과 표 → 장면/무대 코드 → 스토리보드 → **검토 요청** ("바로 만들어"를 붙이면 기다리지 않음) |
-| `/motion-harness2:mv-make` | `/motion-harness:mv-make` | 검사·**게이트** → 렌더 → 검수·**모션 검수** → `out/<폴더이름>.mp4`. 수정: `/motion-harness2:mv-make 2번 장면 더 빠르게` |
+| `/motion-harness2:mv-setup` | `/motion-harness:mv-setup` | 도구 설치·키 연결 여부 확인과 보안 설정 안내 |
+| `/motion-harness2:mv-new` | `/motion-harness:mv-new` | 프로젝트와 brief 생성. 기존 파일은 보존 |
+| `/motion-harness2:mv-refs` | `/motion-harness:mv-refs` | 레퍼런스 탐색·선택 |
+| `/motion-harness2:mv-plan` | `/motion-harness:mv-plan` | 레퍼런스 분석, 소스 적합성 판단, ASSETS 생성 프롬프트, 계획과 음악 방향 |
+| `/motion-harness2:mv-build` | — | 장면 구현, **15fps 초안 + storyboard + 씬별 strip**, 사용자 수정·승인 |
+| `/motion-harness2:mv-make` | `/motion-harness:mv-make` | **새 에이전트 비교 검수·수정**, 음악·믹스 청취 확인 후 고품질 렌더·최종 검수 |
 
-mv-new 는 여러 번 실행해도 안전합니다 — source/ 에 이미지를 추가·교체했으면 다시 실행해 동기화하세요 (mv-plan·mv-make 도 시작할 때 동기화합니다). 자연어로 "이 레퍼런스처럼 만들어줘"라고 해도 mv-plan 이 동작합니다(v2 프로젝트이거나 v2 를 언급할 때).
+영상 하나당 폴더 하나: `ref/`에 레퍼런스, `source/`에 이미지·녹음을 넣습니다. 스킬 인자에 하위 프로젝트명을 지정할 수 있습니다. 기본은 현재 폴더입니다. 사용자가 검토하는 `work/storyboard`와 `strip_s번호` 흐름은 유지됩니다.
 
-**여러 영상을 한 폴더에서 관리하려면** 이름을 붙입니다: `/motion-harness2:mv-new 모션1` → `모션1/` 하위 폴더가 프로젝트가 되고, 이후 명령에도 `모션1` 을 붙입니다.
+## 2.1 → 2.2 변경
 
-**레퍼런스에 없는 효과를 꼭 넣고 싶으면** `brief.md` 의 "효과 지정"에 적습니다(예: `VHS 화면`, `화면 채움 전환`, `모션 블러`).
+| 부분 | 2.1 | 2.2 |
+|---|---|---|
+| 계획 | 분석부터 장면·초안까지 한 단계 | mv-plan / mv-build로 분리 |
+| 이미지 | 매체 일치를 위한 코드 재구성, 누락 시 대체 | 스타일에 맞는 원본 활용, 불일치/누락은 ASSETS로 재제작 요청. 상세 이미지의 저품질 코드 대체 금지 |
+| 초안 | 15fps·씬별 strip | 유지. 빠른 동작만 필요 시 최종 FPS 확인 |
+| 품질 검수 | 제작자 채점, 핵심 항목 만점 강제 | 새 검수자가 레퍼런스 기준으로 비교, 시각 근거·중요 결함 중심 |
+| 최신성 | 이전 점수표 재사용 가능 | 소스·계획·오디오·초안 변경 시 승인/검수 해시 불일치로 최종 렌더 차단 |
+| 음악 | 반복적인 합성 비트/패드 | Lyria 3.5 이미지·구간 큐 기반 생성, 로컬 페이드·덕킹·효과음 믹스 |
+| 지침 | 강제 동작·전환 횟수·만점 기준 | 레퍼런스/내용 중심으로 정리, 제작 GUIDE 한 파일 |
+| 2.5D/3D | 기존 엔진 | 필요한 장면만 2.5D/기본 3D/모델 연기로 구분. 엔진 교체 없음 |
+| 긴 영상 | 큰 QC 한 장 | 30초 단위 QC 페이지, 자막 종료가 다음 자막과 겹치지 않도록 제한 |
 
-## 레퍼런스 스타일을 빠짐없이 옮기는 방법
+개선 효과는 누락 방지·이미지 품질 유지·검수 근거입니다. 대신 소스 재제작 대기, 추가 승인·검수 시간, 음악 API 비용/대기와 OS 보안 저장소 설정이 필요합니다. 고급 3D 캐릭터 리깅·완전한 장편 자동 편집·레퍼런스와 동급 품질을 자동 보장하지 않습니다. 실제로 보고 들은 범위만 검수 결과에 기록합니다.
 
-1. **측정** — `analyze-ref` 가 레퍼런스를 숫자와 카드 1장으로: 컷·평균 샷·움직임 곡선, 팔레트 HEX·강조색, **질감**(노이즈 세기, 그레인이 움직이는지/종이처럼 고정인지, 그라데이션 방향·세기, 비네트), 템포, 원본 해상도 질감 확대, 움직임 피크 연속 프레임, 움직임 강도(예비동작·오버슈트·정지).
-2. **효과 근거표** — 감지기 후보를 `evidence.png` 로 보고 확정·기각. 확정한 효과만 `work/PLAN.md` 의 효과 표에 근거 이미지와 함께 적힌다.
-3. **스타일 DNA** — 매번 같은 11개 항목(구도·색·질감·타이포·모션·리듬·전환·카메라·정보장치·사운드·소스처리)을 측정값으로 채우고 항목마다 채택/변형/제외. 반영률 8/10 미만이면 다시.
-4. **소스 해부** — 소스마다 종류·움직임 단위·재구성 방식을 정하고 레퍼런스 매체로 다시 만든다. 소스·코드로 만들 수 없는 핵심 이미지만 `work/ASSETS.md` 로 요청 (파일 이름·규격·첨부할 레퍼런스 프레임·영문 생성 프롬프트). 캐릭터는 코드로 그릴지 파츠 시트를 받을지 판정해 표에 표시.
-5. **시그니처 무브** — 그 레퍼런스다운 동작 2~5개를 모두 장면에 배정.
-6. **주 레퍼런스 1개** — 여러 개를 주면 하나가 기준, 나머지는 지정한 항목만.
-7. **색은 고정 아님** — 기본은 레퍼런스 팔레트, brief 의 "색 지정"에 적으면(예: 배경 남색 #1B2A4A) 그것이 우선.
+## 음악
 
-## 구성
+`mv-plan`에서 분위기·스타일·추천 BPM을 확인하고, 화면 피드백 반영 후 `mv-make`에서 생성합니다. 전체 storyboard와 주요 strip 최대 10장, 각 이미지의 씬/전역초, 구간별 전개를 Lyria에 전달합니다. Google에 보낼 이미지는 사용자에게 알립니다. 원본 이미지 폴더 전체를 일괄 업로드하지 않습니다.
 
+생성 음악은 같은 입력에서 캐시를 재사용합니다. 보컬 없음/정확한 BPM/초 단위 전환은 프롬프트만으로 보장되지 않아 청취 확인과 로컬 편집이 필요합니다. 실패 시 옛 합성음으로 자동 대체하지 않습니다. 내레이션/효과음은 유지합니다. [공식 Lyria API 문서](https://ai.google.dev/gemini-api/docs/music-generation).
+
+## v2.1로 돌아가기
+
+이전 버전 **2.1.0-alpha.1**, 커밋 `4410c33dacb19f8a44b2bdcf314f55674a575a3b`는 [archive/v2.1](https://github.com/gud8238/motion-harness-v2/tree/archive/v2.1)에 보존되어 있습니다. v2.2가 기존 영상 프로젝트를 자동 변환하지 않습니다. 새 v2.2 프로젝트를 2.1로 열 때 검수 계약이 다르므로 작업 폴더 사본을 사용하세요.
+
+가장 명확한 복귀 방법은 고정된 소스를 로컬에서 실행하는 것입니다:
+```bash
+git clone --branch archive/v2.1 https://github.com/gud8238/motion-harness-v2.git motion-harness-v2.1
+git -C motion-harness-v2.1 checkout 4410c33dacb19f8a44b2bdcf314f55674a575a3b
+claude plugin disable motion-harness2@motion-harness2
+claude --plugin-dir /절대경로/motion-harness-v2.1
 ```
-.claude-plugin/   plugin.json · marketplace.json
-skills/           mv-setup · mv-new · mv-refs · mv-plan · mv-make
-harness/
-  GUIDE.md        기준 문서 (순서·DNA·효과 표 틀·엔진 API·사운드·검수)
-  catalog.json    효과 카탈로그 (id·단계·모듈·게이트가 찾는 호출·감지기·한국어 표현)
-  modules/        효과 표에 켜진 것만 읽는 문서: rig2d · camera2d · transitions · lens2d · fx2d · morph · stage (+ canvas · three)
-  runtime/        mh.js (캔버스 도구 + ① 기본기) · mh-rig.js (2D 캐릭터) · mh-cam.js (2D 카메라·전환)
-                  mh-lens.js (심도·초점·스미어) · mh-fx.js (VHS·글리치·시간 재매핑) · mh-morph.js (모핑)
-                  mh-stage.js (무대 모드) · mh-three.js (three.js 도구)
-  template/       HyperFrames 프로젝트 · 장면 템플릿(dom/canvas/three/stage)
-  tools/          setup · new · refs · analyze-ref · assets · scene · board · audio · tts · compare · make
-                  gate (3단계 게이트) · plan-check (계획 검사·채점표 합격선) · motion-qc (모션 검수)
-  PLAN-example.md 계획서가 채워진 모습 (효과·소스 해부·동작·연기·전환 표·무대 비트 포함, 형식 참고)
-```
+Windows에서는 해당 폴더의 실제 절대경로를 따옴표로 감싸 사용합니다. v2.2 복귀 시 로컬 플러그인 옵션 없이 시작하고 `claude plugin enable motion-harness2@motion-harness2`를 실행하세요. v2.1에는 Lyria 연동이 없으며 기존 합성 음악은 이 보존 버전에서 사용할 수 있습니다.
 
-## 참고
-- HyperFrames **커넥터(claude.ai)** 는 호스팅 편집용이라 Claude Code 에서는 영상 생성·렌더가 막혀 있습니다. 이 플러그인은 같은 엔진을 **로컬 CLI** 로 씁니다. 완성 후 직접 손보려면 프로젝트의 `scene/` 폴더에서 `npx hyperframes preview`.
-- HyperFrames 의 배경 제거(`remove-background`)는 **인물 전용 모델**입니다. 제품·사물 사진은 단색 배경에서 찍으면 내장 배경 제거가 동작합니다.
-- 한국어 TTS 는 edge-tts(인터넷 필요). 직접 녹음도 가능.
-- 3D 캐릭터·3D 후처리(보케·블룸)는 다음 단계(3D 트랙)에서 다룹니다. 지금 three.js 장면은 v1 과 같습니다.
+## 구성·검증
 
-## 라이선스
-코드 MIT. 레퍼런스 라이브러리는 각 원저작자 라이선스(lemo-opuscar 데모 CC BY 4.0, animate MIT, awesome 목록의 작품은 각 제작자 소유 — 스타일 문법만 참고). Pretendard SIL OFL 1.1, flubber MIT, opentype.js MIT, three.js MIT, GSAP 표준 라이선스, HyperFrames Apache-2.0.
+제작 기준: [harness/GUIDE.md](harness/GUIDE.md). 스킬 파일은 해당 단계로 안내합니다. 모듈 문서는 선택한 API만 참고합니다.
+
+- runtime: mh.js, mh-rig.js, mh-cam.js, mh-lens.js, mh-fx.js, mh-morph.js, mh-stage.js, mh-three.js
+- gate (3단계 게이트), plan-check (계획 검사·채점표 합격선) — 2.1 호환, motion-qc (모션 검수)
+- v2.2: workflow(소스 준비·승인·검수 최신성), credentials(OS 보안 저장소), music(Lyria), audio(믹스)
+- `npm ci && npm test`. 실제 Gemini 키 없이 네트워크 모의 테스트를 수행하며, 실제 음악 생성·모든 OS 보안 저장소의 실행 검증과 구분합니다.
+
+MIT. 라이브러리: flubber MIT, opentype.js MIT, Pretendard SIL OFL. 레퍼런스 작품의 권리는 원저작자에게 있습니다.

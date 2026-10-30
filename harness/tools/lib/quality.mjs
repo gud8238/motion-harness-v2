@@ -17,12 +17,13 @@ const norm = s => String(s ?? '').replace(/[★\s]/g, '');
 const LABEL_ONLY = /^(라벨|자막|문구|글자|텍스트|태그|캡션)|(라벨|자막|문구|글자|텍스트|태그|캡션)\s*(으로|로)\s*만?\s*(표시|처리|설명|보여|안내)/;
 const CUT_LIKE = /(하드\s*컷|페이드|^컷$|^컷\s|디졸브)/;
 
-export const hasQualityMark = brief => String(brief).includes(QUALITY_MARK);
+export const hasQualityMark = brief => /<!-- quality: 2\.[12] -->/.test(String(brief));
 
 // md = PLAN.md, opt = { brief: brief.md 문자열, scenes: ['s1', …] (장면 id, 없으면 장면 대조 생략) }
 // 반환 { errors: [{ table, line, msg }], warnings: [같은 형식] }
 export function checkPlan(md, opt = {}) {
   const errors = [], warnings = [];
+  const modern = String(opt.brief).includes('<!-- quality: 2.2 -->');
   const err = (table, line, msg) => errors.push({ table, line, msg });
   const warn = (table, line, msg) => warnings.push({ table, line, msg });
   const scenes = opt.scenes || null;
@@ -43,7 +44,7 @@ export function checkPlan(md, opt = {}) {
     const rb = REBUILDS.find(k => rebuild.includes(k));
     if (!rb) { err(T, line, `재구성 '${rebuild}' — ${REBUILDS.join('/')} 중 하나`); continue; }
     if (rb !== '미사용' && rb !== '사진 그대로' && blank(units)) err(T, line, `움직임 단위가 비었습니다 — 소스를 부품·레이어로 나눠 적으세요`);
-    if (rb === '사진 그대로' && !PHOTO_REASONS.some(k => reason.includes(k)))
+    if (!modern && rb === '사진 그대로' && !PHOTO_REASONS.some(k => reason.includes(k)))
       err(T, line, `사진 그대로는 예외 사유(${PHOTO_REASONS.join(' / ')})가 필요합니다 — 아니면 다시 그리기·레이어 분리로`);
   }
 
@@ -52,7 +53,7 @@ export function checkPlan(md, opt = {}) {
   for (const { cells, line } of acts || []) {
     const T = '동작 표', names = ['동사', '주체', '화면 동작', '물리·연결', '결과', '장면'];
     cells.slice(0, 6).forEach((c, k) => { if (blank(c)) err(T, line, `${names[k]} 칸이 비었습니다`); });
-    if (LABEL_ONLY.test(cells[2].trim())) err(T, line, `화면 동작 '${cells[2]}' — 라벨·자막만으로는 안 됩니다. 주체가 직접 하는 동작을 적으세요`);
+    if (!modern && LABEL_ONLY.test(cells[2].trim())) err(T, line, `화면 동작 '${cells[2]}' — 라벨·자막만으로는 안 됩니다. 주체가 직접 하는 동작을 적으세요`);
     if (!blank(cells[5]) && !sceneOk(cells[5])) warn(T, line, `장면 '${cells[5]}' 을 장면 목록에서 찾지 못했습니다`);
   }
   if (acts && opt.brief != null) {
@@ -78,7 +79,7 @@ export function checkPlan(md, opt = {}) {
       if (CUT_LIKE.test(how.trim()) && blank(ev)) err(T, line, `'${how}' 는 레퍼런스가 그럴 때만 — 근거 칸을 채우세요`);
       const k = norm(how); count.set(k, (count.get(k) || 0) + 1);
     }
-    for (const [k, n] of count) if (n > 3) err(T, 0, `같은 전환 '${k}' 이 ${n}번 — 3번 이하로`);
+    for (const [k, n] of count) if (!modern && n > 3) err(T, 0, `같은 전환 '${k}' 이 ${n}번 — 3번 이하로`);
     if (scenes && scenes.length > 1 && trs.length < scenes.length - 1) warn(T, 0, `장면 ${scenes.length}개인데 전환 표 ${trs.length}행 — 경계마다 한 행`);
   }
   return { errors, warnings };

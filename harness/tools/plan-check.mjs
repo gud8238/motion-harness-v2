@@ -21,7 +21,7 @@ export function runPlanCheck(projDir, { review = false } = {}) {
   const scenes = idx ? hosts(idx).filter(h => h.track !== 'captions').map(h => h.id) : null;
   const plan = checkPlan(md, { brief, scenes: scenes && scenes.length ? scenes : null });
   let rv = null;
-  if (review) {
+  if (review && !brief.includes('<!-- quality: 2.2 -->')) {
     const dir = path.join(work, 'review');
     const f = fs.existsSync(dir) ? latestRound(fs.readdirSync(dir)) : null;
     rv = f ? { file: `work/review/${f}`, ...checkReview(read(path.join(dir, f))) } : { file: null, errors: ['채점표가 없습니다 — work/review/round-1.md 부터 (GUIDE 2절 5·6절)'], scores: {} };
